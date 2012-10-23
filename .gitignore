@@ -10,3 +10,14 @@
 *.lai
 *.la
 *.a
+
+# Python
+*.pyc
+
+# Eclipse
+/.project
+/.settings
+/.pydevproject
+
+# !R!@#!@ svn
+.svn
