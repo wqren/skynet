@@ -1,5 +1,7 @@
-mpi-ht: mpi-ht.cc Makefile
-	mpic++ -O3 -fno-omit-frame-pointer -ggdb1 mpi-ht.cc -lboost_mpi -lboost_serialization -o mpi-ht
+LIBS := -L../util/ -lboost_mpi -lboost_serialization -lboost_program_options -lutil -lrt
+
+mpi-perf: mpi-perf.cc Makefile
+	mpic++ -I.. -O3 -fno-omit-frame-pointer -ggdb1 mpi-perf.cc ${LIBS} -o mpi-perf
 
 clean:
-	rm -f mpi-ht a.out
+	rm -f mpi-perf a.out

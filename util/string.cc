@@ -1,6 +1,7 @@
-#include "util/string.h"
 #include <stdarg.h>
 #include <stdio.h>
+
+#include "util/string.h"
 
 using std::vector;
 
@@ -109,6 +110,10 @@ string ToString(int32_t v) {
 
 string ToString(int64_t v) {
   return StringPrintf("%ld", v);
+}
+
+string ToString(double v) {
+  return StringPrintf("%f", v);
 }
 
 string ToString(string v) {
