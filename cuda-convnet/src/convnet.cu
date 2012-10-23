@@ -213,6 +213,7 @@ void ConvNet::fprop(PASS_TYPE passType) {
     reset();
     for (int i = 0; i < _dataLayers.size(); i++) {
         _dataLayers[i]->fprop(_data->getData(), passType);
+        cerr << "Forward propagation...\n";
     }
 }
 

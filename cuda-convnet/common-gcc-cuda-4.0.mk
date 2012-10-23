@@ -83,6 +83,7 @@ CWARN_FLAGS := $(CXXWARN_FLAGS) \
 	-Wstrict-prototypes \
 	-Wmissing-prototypes \
 	-Wmissing-declarations \
+	-Wno-builtin-macro-redefined \
 	-Wnested-externs \
 	-Wmain \
 
