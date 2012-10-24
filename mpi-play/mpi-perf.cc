@@ -46,14 +46,14 @@ int main(int argc, char* argv[]) {
       if (myid == j)
         continue;
       sends.push_back(
-          world.Isend(req.data(), req.size(), MPI::UNSIGNED_CHAR, j, 0));
+          world.Isend(req.data(), req.size() / sizeof(long), MPI::LONG, j, 0));
     }
 
     for (int j = 0; j < numPeers; ++j) {
       if (myid == j)
         continue;
       recvs.push_back(
-          world.Irecv(&resp[j][0], dataSize, MPI::UNSIGNED_CHAR, j, 0));
+          world.Irecv(&resp[j][0], dataSize / sizeof(long), MPI::LONG, j, 0));
     }
     for (int j = 0; j < sends.size(); ++j) {
       sends[j].Wait();
