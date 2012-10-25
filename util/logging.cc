@@ -50,12 +50,7 @@ void logAtLevel(LogLevel level, const char* path, int line, const char* fmt, ...
   // subSecond -= int(subSecond);
   // sprintf("%0.3f", subSecond);
 
-  time_t now = time(NULL);
-  struct tm now_t;
-  localtime_r(&now, &now_t);
-  strftime(timeBuffer, 4096, "%Y%m%d:%H%M%S", &now_t);
-
-  fprintf(stderr, "%s %.3f [%5d] %s:%3d %s\n", logLevels[level], subSecond,
+  fprintf(stderr, "%s %4.3f [%5d] %s:%3d %s\n", logLevels[level], subSecond,
       getpid(), file, line, buffer);
 
   fflush(stderr);

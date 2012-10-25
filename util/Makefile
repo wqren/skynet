@@ -1,4 +1,4 @@
-CXXOPT = -O3 -ggdb2
+CXXOPT = -O3 -ggdb2 -fPIC
 CXXINCLUDE = -I../
 CXX = g++ ${CXXOPT} ${CXXINCLUDE}
 

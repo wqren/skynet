@@ -7,7 +7,7 @@ using std::vector;
 
 double Now() {
   timespec tp;
-  clock_gettime(CLOCK_MONOTONIC, &tp);
+  clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tp);
   return tp.tv_sec + 1e-9 * tp.tv_nsec;
 }
 
