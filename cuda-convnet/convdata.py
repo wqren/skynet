@@ -23,9 +23,12 @@
 # EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 from data import *
-import numpy.random as nr
+import glob
 import numpy as n
+import numpy.random as nr
 import random as r
+import tarfile
+from PIL import Image
 
 class CIFARDataProvider(LabeledMemoryDataProvider):
     def __init__(self, data_dir, batch_range, init_epoch=1, init_batchnum=None, dp_params={}, test=False):
@@ -56,6 +59,43 @@ class CIFARDataProvider(LabeledMemoryDataProvider):
     def get_plottable_data(self, data):
         return n.require((data + self.data_mean).T.reshape(data.shape[1], 3, self.img_size, self.img_size).swapaxes(1,3).swapaxes(1,2) / 255.0, dtype=n.single)
     
+class ImageNetDataProvider(LabeledMemoryDataProvider):
+    def __init__(self, data_dir, batch_range, init_epoch=1, init_batchnum=None, dp_params={}, test=False):
+        LabeledMemoryDataProvider.__init__(self, data_dir, batch_range, init_epoch, init_batchnum, dp_params, test)
+        #self.data_mean = self.batch_meta['data_mean']
+        self.num_colors = 3
+        self.img_size = 256
+        # Subtract the mean from the data and make sure that both data and
+        # labels are in single-precision floating point.
+        #for d in self.data_dic:
+            # This converts the data matrix to single precision and makes sure that it is C-ordered
+            #d['data'] = n.require((d['data'] - self.data_mean), dtype=n.single, requirements='C')
+            #d['labels'] = n.require(d['labels'].reshape((1, d['data'].shape[1])), dtype=n.single, requirements='C')
+
+    def get_next_batch(self):
+        epoch, batchnum, datadic = LabeledMemoryDataProvider.get_next_batch(self)
+        images = []
+        labels = n.require(datadic['labels'], dtype=n.single, requirements='C') 
+        for imgbytes in datadic['data']:
+          img = n.array(Image.fromstring(imgbytes).resize((256, 256)))
+          img = img.reshape(256 * 256 * 3)
+          n.require(img, dtype=n.single, requirements='C')
+          images.append(img)
+        
+        return epoch, batchnum, [images, labels]
+
+    # Returns the dimensionality of the two data matrices returned by get_next_batch
+    # idx is the index of the matrix. 
+    def get_data_dims(self, idx=0):
+        return self.img_size**2 * self.num_colors if idx == 0 else 1
+    
+    # Takes as input an array returned by get_next_batch
+    # Returns a (numCases, imgSize, imgSize, 3) array which can be
+    # fed to pylab for plotting.
+    # This is used by shownet.py to plot test case predictions.
+    def get_plottable_data(self, data):
+        return n.require((data + self.data_mean).T.reshape(data.shape[1], 3, self.img_size, self.img_size).swapaxes(1,3).swapaxes(1,2) / 255.0, dtype=n.single)    
+
 class CroppedCIFARDataProvider(LabeledMemoryDataProvider):
     def __init__(self, data_dir, batch_range=None, init_epoch=1, init_batchnum=None, dp_params=None, test=False):
         LabeledMemoryDataProvider.__init__(self, data_dir, batch_range, init_epoch, init_batchnum, dp_params, test)
@@ -120,7 +160,7 @@ class CroppedCIFARDataProvider(LabeledMemoryDataProvider):
                 if nr.randint(2) == 0: # also flip the image with 50% probability
                     pic = pic[:,:,::-1]
                 target[:,c] = pic.reshape((self.get_data_dims(),))
-    
+   
 class DummyConvNetDataProvider(LabeledDummyDataProvider):
     def __init__(self, data_dim):
         LabeledDummyDataProvider.__init__(self, data_dim)

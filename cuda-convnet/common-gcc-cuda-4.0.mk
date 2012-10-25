@@ -61,7 +61,7 @@ CC         := gcc -fPIC
 LINK       := g++ -fPIC
 
 # Includes
-INCLUDES  += -I. -I$(CUDA_INSTALL_PATH)/include -I$(COMMONDIR)/inc -I$(SHAREDDIR)/inc
+INCLUDES  += -I../ -I. -I$(CUDA_INSTALL_PATH)/include -I$(COMMONDIR)/inc -I$(SHAREDDIR)/inc
 
 # Warning flags
 CXXWARN_FLAGS := \
@@ -320,6 +320,8 @@ endif
 ifeq ($(USECUSPARSE),1)
   LIB += -lcusparse
 endif
+
+LIB += -L../util/ -lutil -lrt
 
 # Lib/exe configuration
 # Lib/exe configuration

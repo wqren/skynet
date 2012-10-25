@@ -27,6 +27,9 @@
 #include <algorithm>
 #include <util.cuh>
 #include <worker.cuh>
+#include "util/common.h"
+#include "util/logging.h"
+
 
 using namespace std;
 
@@ -89,13 +92,24 @@ void TrainingWorker::run() {
     _dp->setData(*_data);
     Cost& batchCost = *new Cost(0);
     for (int i = 0; i < _dp->getNumMinibatches(); i++) {
+        double fPropStart = util::Now();
         _convNet->fprop(i, _test ? PASS_TEST : PASS_TRAIN);
+        double costStart = util::Now();
         _convNet->getCost(batchCost);
+        double bPropStart = util::Now();
         
         if (!_test) {
             _convNet->bprop(PASS_TRAIN);
             _convNet->updateWeights();
         }
+        double done = util::Now();
+
+        Log_Info("Finished batch: %d/%d %.9f, %.9f, %.9f, %.9f",
+                i, _dp->getNumMinibatches(),
+                costStart - fPropStart,
+                bPropStart - costStart,
+                done - bPropStart,
+                done - fPropStart);
     }
     cudaThreadSynchronize();
     _convNet->getResultQueue().enqueue(new WorkResult(WorkResult::BATCH_DONE, batchCost));

@@ -33,6 +33,11 @@
 #include <cudaconv2.cuh>
 #include <matrix.h>
 
+
+#include "util/common.h"
+#include "util/logging.h"
+
+
 using namespace std;
 
 /* 
@@ -57,9 +62,11 @@ Layer::Layer(ConvNet* convNet, PyObject* paramsDict, bool trans) :
 }
 
 void Layer::fpropNext(PASS_TYPE passType) {
+//    double start = util::Now();
     for (int i = 0; i < _next.size(); i++) {
         _next[i]->fprop(passType);
     }
+//    Log_Info("Finished layer in %.3f seconds.", util::Now() - start);
 }
 
 void Layer::truncBwdActs() {
@@ -90,6 +97,7 @@ void Layer::fprop(NVMatrix& v, PASS_TYPE passType) {
 }
 
 void Layer::fprop(NVMatrixV& v, PASS_TYPE passType) {
+    double st = util::Now();
     assert(v.size() == _prev.size());
     _inputs.clear();
     _inputs.insert(_inputs.begin(), v.begin(), v.end());
@@ -110,6 +118,9 @@ void Layer::fprop(NVMatrixV& v, PASS_TYPE passType) {
             fpropActs(i, _actsTarget >= 0 || i > 0, passType);
         }
     }
+    cudaThreadSynchronize();
+    double ed = util::Now();
+    Log_Info("fprop %s %.9f", getName().c_str(), ed - st);
     fpropNext(passType);
 }
 
@@ -121,6 +132,7 @@ void Layer::bprop(PASS_TYPE passType) {
 }
 
 void Layer::bprop(NVMatrix& v, PASS_TYPE passType) {
+    double st = util::Now();
     v.transpose(_trans);
     for (int i = 0; i < _prev.size(); i++) {
         _prev[i]->getActs().transpose(_trans);
@@ -148,6 +160,10 @@ void Layer::bprop(NVMatrix& v, PASS_TYPE passType) {
     }
     truncBwdActs();
     
+    cudaThreadSynchronize();
+    double ed = util::Now();
+    Log_Info("bprop %s %.9f", getName().c_str(), ed - st);
+
     if (isGradProducer()) {
         for (int i = 0; i < _prev.size(); i++) {
             if (_prev[i]->isGradConsumer()) {

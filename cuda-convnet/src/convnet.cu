@@ -34,6 +34,9 @@
 #include <convnet.cuh>
 #include <util.cuh>
 
+#include "util/common.h"
+#include "util/logging.h"
+
 using namespace std;
 
 /* 
@@ -211,9 +214,10 @@ void ConvNet::bprop(PASS_TYPE passType) {
 void ConvNet::fprop(PASS_TYPE passType) {
     assert(_data != NULL);
     reset();
+    double batchStart = util::Now();
     for (int i = 0; i < _dataLayers.size(); i++) {
+        double start = util::Now();
         _dataLayers[i]->fprop(_data->getData(), passType);
-        cerr << "Forward propagation...\n";
     }
 }
 

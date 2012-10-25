@@ -84,7 +84,7 @@ class DataProvider:
         return self.batch_meta['num_vis']
     
     def advance_batch(self):
-        self.batch_idx = self.get_next_batch_idx()
+        self.batch_idx = self.get_next_tbatch_idx()
         self.curr_batchnum = self.batch_range[self.batch_idx]
         if self.batch_idx == 0: # we wrapped
             self.curr_epoch += 1
