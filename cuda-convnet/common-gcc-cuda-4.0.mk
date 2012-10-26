@@ -460,7 +460,7 @@ $(TARGET): makedirectories $(OBJS) $(CUBINS) $(PTXBINS) link Makefile
 	$(VERBOSE)$(LINKLINE)
 	
 link: 
-	$(VERBOSE)ln -sf ./bin/linux/release/$(EXECUTABLE) .
+	$(VERBOSE)ln -sf ./bin/linux/${BINSUBDIR}/$(EXECUTABLE) .
 
 cubindirectory:
 	$(VERBOSE)mkdir -p $(CUBINDIR)
