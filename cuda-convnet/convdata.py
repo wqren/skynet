@@ -28,6 +28,7 @@ import numpy as n
 import numpy.random as nr
 import random as r
 import tarfile
+import cStringIO as c
 from PIL import Image
 
 class CIFARDataProvider(LabeledMemoryDataProvider):
@@ -59,9 +60,9 @@ class CIFARDataProvider(LabeledMemoryDataProvider):
     def get_plottable_data(self, data):
         return n.require((data + self.data_mean).T.reshape(data.shape[1], 3, self.img_size, self.img_size).swapaxes(1,3).swapaxes(1,2) / 255.0, dtype=n.single)
     
-class ImageNetDataProvider(LabeledMemoryDataProvider):
+class ImageNetDataProvider(LabeledDataProvider):
     def __init__(self, data_dir, batch_range, init_epoch=1, init_batchnum=None, dp_params={}, test=False):
-        LabeledMemoryDataProvider.__init__(self, data_dir, batch_range, init_epoch, init_batchnum, dp_params, test)
+        LabeledDataProvider.__init__(self, data_dir, batch_range, init_epoch, init_batchnum, dp_params, test)
         #self.data_mean = self.batch_meta['data_mean']
         self.num_colors = 3
         self.img_size = 256
@@ -73,15 +74,19 @@ class ImageNetDataProvider(LabeledMemoryDataProvider):
             #d['labels'] = n.require(d['labels'].reshape((1, d['data'].shape[1])), dtype=n.single, requirements='C')
 
     def get_next_batch(self):
-        epoch, batchnum, datadic = LabeledMemoryDataProvider.get_next_batch(self)
-        images = []
-        labels = n.require(datadic['labels'], dtype=n.single, requirements='C') 
-        for imgbytes in datadic['data']:
-          img = n.array(Image.fromstring(imgbytes).resize((256, 256)))
-          img = img.reshape(256 * 256 * 3)
-          n.require(img, dtype=n.single, requirements='C')
-          images.append(img)
+        self.advance_batch()
+
+        epoch = self.curr_epoch        
+        batchnum = self.curr_batchnum
         
+        datadic = cPickle.load(open(self.data_dir + '/data_batch_%d' % batchnum))
+        images = [n.array(Image.open(c.StringIO(x)).convert('RGB')).reshape(256*256*3) for x in datadic['data']]
+        images = n.array(images).transpose()
+        images = n.require(images, dtype=n.single, requirements='C')
+        
+        labels = n.array(datadic['labels']).reshape((1, images.shape[1]))
+        labels = n.require(labels, dtype=n.single, requirements='C')
+
         return epoch, batchnum, [images, labels]
 
     # Returns the dimensionality of the two data matrices returned by get_next_batch

@@ -133,6 +133,7 @@ class IGPUModel:
         print "Saving checkpoints to %s" % os.path.join(self.save_path, self.save_file)
         print "========================="
         next_data = self.get_next_batch()
+        print 'Got data...'
         while self.epoch <= self.num_epochs:
             data = next_data
             self.epoch, self.batchnum = data[0], data[1]
@@ -181,6 +182,10 @@ class IGPUModel:
         return batch_data[0], batch_data[1], batch_data[2]['data']
     
     def start_batch(self, batch_data, train=True):
+        d, l = batch_data[2]
+        print 'Starting batch...'
+        print d.shape
+        print l.shape
         self.libmodel.startBatch(batch_data[2], not train)
     
     def finish_batch(self):

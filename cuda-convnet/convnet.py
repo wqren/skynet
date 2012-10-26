@@ -189,6 +189,7 @@ class ConvNet(IGPUModel):
         op.options["num_epochs"].default = 50000
         op.options['dp_type'].default = None
         
+        DataProvider.register_data_provider('imagenet', 'ImageNet', ImageNetDataProvider)
         DataProvider.register_data_provider('cifar', 'CIFAR', CIFARDataProvider)
         DataProvider.register_data_provider('dummy-cn-n', 'Dummy ConvNet', DummyConvNetDataProvider)
         DataProvider.register_data_provider('cifar-cropped', 'Cropped CIFAR', CroppedCIFARDataProvider)
