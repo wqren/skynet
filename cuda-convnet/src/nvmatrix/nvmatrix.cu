@@ -126,7 +126,7 @@ NVMatrix::~NVMatrix() {
         cublasStatus status = cublasFree(_devData);
         if (status != CUBLAS_STATUS_SUCCESS) {
             fprintf(stderr, "!!!! memory free error\n");
-            exit(EXIT_FAILURE);
+            abort();
         }
     }
 }
@@ -148,7 +148,7 @@ void NVMatrix::copyFromHost(const Matrix& hostMatrix) {
                                               hostMatrix.getData(), hostMatrix.getLeadingDim(), _devData, _stride);
         if (status != CUBLAS_STATUS_SUCCESS) {
             fprintf(stderr, "!!!! device access error (write)\n");
-            exit( EXIT_FAILURE);
+            abort();
         }
     }
 }
@@ -163,7 +163,7 @@ void NVMatrix::copyToHost(Matrix& hostMatrix) const {
                                              _devData, getStride(), hostMatrix.getData(), hostMatrix.getLeadingDim());
         if (status != CUBLAS_STATUS_SUCCESS) {
             fprintf(stderr, "!!!! device access error (read)\n");
-            exit( EXIT_FAILURE);
+            abort();
         }
     }
 }
@@ -468,14 +468,14 @@ bool NVMatrix::resize(int numRows, int numCols) {
                 cublasStatus status = cublasFree(_devData);
                 if (status != CUBLAS_STATUS_SUCCESS) {
                     fprintf(stderr, "!!!! memory free error: %X\n", status);
-                    exit(EXIT_FAILURE);
+                    abort();
                 }
             }
             if (numRows * numCols > 0) { // allocate new memory
                 cublasStatus status = cublasAlloc(numCols * numRows, sizeof(float), (void**) &_devData);
                 if (status != CUBLAS_STATUS_SUCCESS) {
                     fprintf(stderr, "!!!! device memory allocation error\n");
-                    exit(EXIT_FAILURE);
+                    abort();
                 }
             } else {
                 _devData = NULL;
