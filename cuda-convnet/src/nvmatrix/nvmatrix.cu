@@ -39,6 +39,8 @@
 #include <nvmatrix_operators.cuh>
 #include <map>
 
+#include "util/logging.h"
+
 using namespace std;
 
 /*
@@ -123,6 +125,7 @@ NVMatrix::NVMatrix(float* devData, int numRows, int numCols, int stride, bool is
 
 NVMatrix::~NVMatrix() {
     if(_ownsData && _numElements > 0) {
+        Log_Info("Freeing: %p", _devData);
         cublasStatus status = cublasFree(_devData);
         if (status != CUBLAS_STATUS_SUCCESS) {
             fprintf(stderr, "!!!! memory free error\n");

@@ -1,6 +1,7 @@
 #ifndef LEGION_COMMON_H_
 #define LEGION_COMMON_H_
 
+#include <boost/cstdint.hpp>
 #include <boost/function.hpp>
 
 #include <algorithm>

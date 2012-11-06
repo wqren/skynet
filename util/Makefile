@@ -3,7 +3,7 @@ CXXINCLUDE = -I../
 CXX = g++ ${CXXOPT} ${CXXINCLUDE}
 
 libutil.a: logging.o common.o string.o
-	ar rcs -o $@ $^
+	ar rcs $@ $^
 
 clean:
 	rm *.o libutil.a

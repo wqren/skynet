@@ -2,7 +2,7 @@ all:
 	cd util && make -j
 	cd cuda-convnet && ./build.sh verbose=1 -j
 	cd zmq-play && make -j
-	cd mpi-play && make -j
+	#cd mpi-play && make -j
 	
 clean:
 	cd util && make clean
