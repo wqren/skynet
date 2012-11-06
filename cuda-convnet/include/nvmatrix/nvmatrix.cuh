@@ -74,7 +74,7 @@ private:
         cublasStatus status = cublasGetError();
         if (status != CUBLAS_STATUS_SUCCESS) {
             fprintf(stderr, msg, NULL);
-            exit(EXIT_FAILURE);
+            abort();
         }
     }
 
