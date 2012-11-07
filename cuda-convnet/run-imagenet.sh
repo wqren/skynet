@@ -2,12 +2,12 @@
 
 #gdb -ex run --args 
 python convnet.py \
-  --data-path=/scratch/power/imagenet/batch-32 \
+  --data-path=/scratch/power/imagenet/batch-64 \
   --save-path=/scratch/power/tmp \
   --gpu=0 \
   --test-range=4 \
   --train-range=0-3 \
-  --layer-def=./imagenet-32.cfg \
+  --layer-def=./imagenet-64.cfg \
   --layer-params=./imagenet-params.cfg \
   --data-provider=imagenet \
   --test-freq=13 \
