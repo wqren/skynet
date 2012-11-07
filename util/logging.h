@@ -25,10 +25,10 @@ double get_processor_frequency();
 
 #define START_PERIODIC(interval)\
 { static int64_t last = 0;\
-  static int64_t cycles = (int64_t)(interval * get_processor_frequency());\
+  static int64_t cycles = (int64_t)(interval * util::get_processor_frequency());\
   static int COUNT = 0; \
   ++COUNT; \
-  int64_t now = rdtsc(); \
+  int64_t now = util::rdtsc(); \
   if (now - last > cycles) {\
     last = now;\
     COUNT = 0;

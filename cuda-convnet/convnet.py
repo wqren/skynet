@@ -104,6 +104,7 @@ class ConvNet(IGPUModel):
             
     # Make sure the data provider returned data in proper format
     def parse_batch_data(self, batch_data, train=True):
+	IGPUModel.parse_batch_data(self, batch_data, train)
         if max(d.dtype != n.single for d in batch_data[2]):
             raise DataProviderException("All matrices returned by data provider must consist of single-precision floats.")
         return batch_data

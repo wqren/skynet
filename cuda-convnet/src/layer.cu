@@ -120,7 +120,7 @@ void Layer::fprop(NVMatrixV& v, PASS_TYPE passType) {
     }
     cudaThreadSynchronize();
     double ed = util::Now();
-    Log_Info("fprop %s %.9f", getName().c_str(), ed - st);
+    // Log_Info("fprop %s %.9f", getName().c_str(), ed - st);
     fpropNext(passType);
 }
 
@@ -162,7 +162,7 @@ void Layer::bprop(NVMatrix& v, PASS_TYPE passType) {
     
     cudaThreadSynchronize();
     double ed = util::Now();
-    Log_Info("bprop %s %.9f", getName().c_str(), ed - st);
+    // Log_Info("bprop %s %.9f", getName().c_str(), ed - st);
 
     if (isGradProducer()) {
         for (int i = 0; i < _prev.size(); i++) {

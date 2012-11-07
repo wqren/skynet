@@ -67,7 +67,6 @@ class ImageNetDataProvider(LabeledDataProvider):
         #self.data_mean = self.batch_meta['data_mean']
         self.num_colors = 3
         self.img_size = 32
-        
         # Subtract the mean from the data and make sure that both data and
         # labels are in single-precision floating point.
         #for d in self.data_dic:
@@ -85,7 +84,8 @@ class ImageNetDataProvider(LabeledDataProvider):
         num_items = datadic['num_items']
         images = []
         for idx in range(num_items):
-          img = Image.open(c.StringIO(datadic['item_%d' % idx])).convert('RGB')
+          #img = Image.open(c.StringIO(datadic['item_%d' % idx])).convert('RGB')
+          img = datadic['item_%d' % idx]
           images.append(n.array(img, dtype=n.single).reshape(32 * 32 * 3))
                   
         images = n.array(images).transpose()

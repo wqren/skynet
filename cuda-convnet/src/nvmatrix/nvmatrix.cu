@@ -67,7 +67,7 @@ void NVMatrix::_init(int numRows, int numCols, int stride, bool isTrans) {
     if (_numElements > 0) {
         cublasAlloc(_numElements, sizeof(float), (void**) &_devData);
         checkCublasError("!!!! device memory allocation error\n");
-        Log_Info("Allocated to %p", _devData);
+        //Log_Info("Allocated to %p", _devData);
     }
     _stride = stride < 0 ? getLeadingDim() : stride;
 }
@@ -126,7 +126,7 @@ NVMatrix::NVMatrix(float* devData, int numRows, int numCols, int stride, bool is
 
 NVMatrix::~NVMatrix() {
     if(_ownsData && _numElements > 0) {
-        Log_Info("Freeing: %p", _devData);
+        // Log_Info("Freeing: %p", _devData);
         cublasStatus status = cublasFree(_devData);
         if (status != CUBLAS_STATUS_SUCCESS) {
             fprintf(stderr, "!!!! memory free error\n");
@@ -481,7 +481,7 @@ bool NVMatrix::resize(int numRows, int numCols) {
                     fprintf(stderr, "!!!! device memory allocation error\n");
                     abort();
                 }
-                Log_Info("Allocated to %p", _devData);
+                //Log_Info("Allocated to %p", _devData);
             } else {
                 _devData = NULL;
             }
