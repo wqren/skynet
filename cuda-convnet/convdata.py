@@ -30,7 +30,7 @@ import random as r
 import tarfile
 import cStringIO as c
 from PIL import Image
-import shelve
+import cPickle
 
 class CIFARDataProvider(LabeledMemoryDataProvider):
     def __init__(self, data_dir, batch_range, init_epoch=1, init_batchnum=None, dp_params={}, test=False):
@@ -66,8 +66,7 @@ class ImageNetDataProvider(LabeledDataProvider):
         LabeledDataProvider.__init__(self, data_dir, batch_range, init_epoch, init_batchnum, dp_params, test)
         #self.data_mean = self.batch_meta['data_mean']
         self.num_colors = 3
-        self.img_size = 32
-        
+        self.img_size = 64
         # Subtract the mean from the data and make sure that both data and
         # labels are in single-precision floating point.
         #for d in self.data_dic:
@@ -81,14 +80,13 @@ class ImageNetDataProvider(LabeledDataProvider):
         epoch = self.curr_epoch        
         batchnum = self.curr_batchnum
         
-        datadic = shelve.open(self.data_dir + '/data_batch_%d' % batchnum, 'r')
-        num_items = datadic['num_items']
-        images = []
-        for idx in range(num_items):
-          img = Image.open(c.StringIO(datadic['item_%d' % idx])).convert('RGB')
-          images.append(n.array(img, dtype=n.single).reshape(32 * 32 * 3))
-                  
-        images = n.array(images).transpose()
+        datadic = cPickle.load(open(self.data_dir + '/data_batch_%d' % batchnum, 'r'))
+        #num_items = datadic['num_items']
+        images = datadic['data']
+        #images = n.array(images)
+	images = images - n.mean(images, axis=0)
+        images = images / 256
+	images = images.transpose()
         images = n.require(images, dtype=n.single, requirements='C')
         
         labels = n.array(datadic['labels']).reshape((1, images.shape[1]))

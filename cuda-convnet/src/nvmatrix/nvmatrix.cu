@@ -481,6 +481,10 @@ bool NVMatrix::resize(int numRows, int numCols) {
                     fprintf(stderr, "!!!! device memory allocation error\n");
                     abort();
                 }
+<<<<<<< HEAD
+=======
+                //Log_Info("Allocated to %p", _devData);
+>>>>>>> 0fe39e7a5ba24500e8af04860d91feee994fb890
             } else {
                 _devData = NULL;
             }
