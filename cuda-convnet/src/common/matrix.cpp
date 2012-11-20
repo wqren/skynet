@@ -26,6 +26,9 @@
 
 #include <matrix.h>
 #include <matrix_funcs.h>
+#include <cuda.h>
+#include <cutil_inline.h>
+#include "common/logging.h"
 
 #if defined(_WIN64) || defined(_WIN32)
 double sqrt(int _X) {return sqrt((double) _X);}
@@ -34,11 +37,22 @@ double log(int _X) {return log((double) _X);}
 
 using namespace std;
 
+#define CUDA_CALL(x) do { if((x) != cudaSuccess) { \
+                            printf("Error at %s:%d\n",__FILE__,__LINE__);\
+                            abort();}} while(0)
+
 void Matrix::_init(MTYPE* data, long int numRows, long int numCols, bool transpose, bool ownsData) {
     _updateDims(numRows, numCols);
     _ownsData = ownsData;
     _trans = transpose ? CblasTrans : CblasNoTrans;
     _data = data;
+}
+
+template<class T>
+T* _cudaMalloc(size_t numElements) {
+    T* out;
+    CUDA_CALL(cudaMallocHost(&out, numElements * sizeof(T)));
+    return out;
 }
 
 Matrix::Matrix() {
@@ -47,12 +61,12 @@ Matrix::Matrix() {
 
 Matrix::Matrix(long int numRows, long int numCols) {
     _init(NULL, numRows, numCols, false, true);
-    this->_data = numRows * numCols > 0 ? new MTYPE[this->_numElements] : NULL;
+    this->_data = numRows * numCols > 0 ? _cudaMalloc<MTYPE>(this->_numElements) : NULL;
 }
 
 Matrix::Matrix(const Matrix &like) {
     _init(NULL, like.getNumRows(), like.getNumCols(), false, true);
-    this->_data = new MTYPE[this->_numElements];
+    this->_data = _cudaMalloc<MTYPE>(this->_numElements);
 }
 
 /* construct a matrix with another matrix's data. the resultant
@@ -78,7 +92,7 @@ Matrix::Matrix(const PyArrayObject *src) {
             this->_ownsData = false;
             this->_trans = src->flags & NPY_CONTIGUOUS ? CblasNoTrans : CblasTrans;
         } else {
-            this->_data = new MTYPE[PyArray_DIM(src,0) * PyArray_DIM(src,1)];
+            this->_data = _cudaMalloc<MTYPE>(PyArray_DIM(src,0) * PyArray_DIM(src,1));
             for (long int i = 0; i < PyArray_DIM(src,0); i++) {
                 for (long int j = 0; j < PyArray_DIM(src,1); j++) {
                     (*this)(i,j) = *reinterpret_cast<MTYPE*>(PyArray_GETPTR2(src,i,j));
@@ -91,7 +105,7 @@ Matrix::Matrix(const PyArrayObject *src) {
 #endif
 Matrix::~Matrix() {
     if(this->_data != NULL && this->_ownsData) {
-        delete[] this->_data;
+        CUDA_CALL(cudaFreeHost(this->_data));
     }
 }
 
@@ -454,7 +468,7 @@ void Matrix::resize(long int newNumRows, long int newNumCols) {
         assert(!isView());
         if (this->getNumElements() != newNumRows * newNumCols) {
             delete[] this->_data; //deleting NULL is ok, sez c++
-            this->_data = new MTYPE[newNumRows * newNumCols];
+            this->_data = _cudaMalloc<MTYPE>(newNumRows * newNumCols);
         }
         this->_updateDims(newNumRows, newNumCols);
         this->_trans = CblasNoTrans;
