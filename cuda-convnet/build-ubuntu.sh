@@ -28,7 +28,7 @@ export NUMPY_INCLUDE_PATH=/usr/share/pyshared/numpy/core/include/numpy/
 
 # MPI include directories.  You should be able to get these from running mpicxx -showme:compile
 export MPI_INCLUDE="-I/home/power/pkg/openmpi/include"
-export MPI_LINK="-L/home/power/pkg/openmpi/lib -lmpi_cxx -lmpi -lrdmacm -libverbs -lrt -lnsl -lutil -lm -ldl -lm -lrt -lnsl -lutil -lm"
+export MPI_LINK="-L/home/power/pkg/openmpi/lib -lmpi_cxx -lmpi -ldl -lm -Wl,--export-dynamic -lrt -lnsl -lutil -lm -ldl -lopen-pal"
 
 # ATLAS library directory. This should contain the file libcblas.so, among others.
 export ATLAS_LIB_PATH=/usr/lib/atlas-base
