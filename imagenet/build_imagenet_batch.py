@@ -1,39 +1,51 @@
 #!/usr/bin/env python
 
+from os.path import basename
 import cPickle
+import glob
 import imagenet
 import logging
 import mycloud
 import os
-import shelve
 
-logging.basicConfig(level=logging.INFO,
-                    format="%(created)f %(process)d %(levelname).1s:%(filename)s:%(lineno)3d:%(message)s")
+logging.basicConfig(level=logging.INFO, format="%(created)f %(process)d %(levelname).1s:%(filename)s:%(lineno)3d:%(message)s")
 
-batch = {}
-logging.info('Initializing syn list')
+def zip_to_hbase():
+  h = imagenet.hbase_connect()
 
-if __name__ == '__main__':
-  cluster = mycloud.Cluster(
-    [
-      ('beaker-14', 6),
-      ('beaker-15', 6),
-      ('beaker-16', 6),
-#      ('beaker-17', 6),
-      ('beaker-18', 6),
-      ('beaker-19', 6),
-      ('beaker-20', 6),
-      ('beaker-21', 6),
-      ('beaker-22', 6),
-      ('beaker-23', 6),
-      ('beaker-24', 6),
-      ('beaker-25', 6),
-   ])
-  
+  if not 'imagenet' in h.tables():
+    h.create_table('imagenet',
+        {'meta' : { 'COMPRESSION' : 'lzo' },
+         'data' : {} })
+                                      
+  cluster = mycloud.Cluster()
+  cluster.map(imagenet.zip_to_hbase, imagenet.SYNIDS)
+
+def filename_to_synid(f):
+  return basename(f).split('.')[0][1:]
+
+def zip_to_batch():
   os.system('rm "%s"/*' % imagenet.OUTPUTDIR)
   os.system('mkdir -p "%s"' % imagenet.OUTPUTDIR)
   
-  cluster.map(imagenet.build_mini_batch, range(imagenet.NUM_BATCHES))
-      
   batch_meta = { 'label_names' : imagenet.LABEL_NAMES }
   cPickle.dump(batch_meta, open(imagenet.OUTPUTDIR + '/batches.meta', 'w'))
+
+  from mycloud.mapreduce import MapReduce
+  from mycloud.resource import Zip, LevelDB
+  cluster = mycloud.Cluster()
+
+  zips = glob.glob('/hdfs/imagenet/zip/*.zip')
+  zips = [f for f in zips if filename_to_synid(f) in imagenet.SYNIDS]
+  inputs = [Zip(f) for f in zips]
+  outputs = [LevelDB(imagenet.OUTPUTDIR + '/batch-%d' % i) for i in range(imagenet.NUM_BATCHES)]
+
+  mr = MapReduce(cluster, 
+                 imagenet.imagenet_mapper,
+                 imagenet.imagenet_reducer,
+                 inputs, outputs)
+  mr.run()
+      
+if __name__ == '__main__':
+  zip_to_batch()
+  #zip_to_hbase()

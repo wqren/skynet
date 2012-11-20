@@ -34,8 +34,7 @@
 #include <matrix.h>
 
 
-#include "util/common.h"
-#include "util/logging.h"
+#include "common/logging.h"
 
 
 using namespace std;
@@ -62,11 +61,11 @@ Layer::Layer(ConvNet* convNet, PyObject* paramsDict, bool trans) :
 }
 
 void Layer::fpropNext(PASS_TYPE passType) {
-//    double start = util::Now();
+//    double start = Now();
     for (int i = 0; i < _next.size(); i++) {
         _next[i]->fprop(passType);
     }
-//    Log_Info("Finished layer in %.3f seconds.", util::Now() - start);
+//    Log_Info("Finished layer in %.3f seconds.", Now() - start);
 }
 
 void Layer::truncBwdActs() {
@@ -97,7 +96,7 @@ void Layer::fprop(NVMatrix& v, PASS_TYPE passType) {
 }
 
 void Layer::fprop(NVMatrixV& v, PASS_TYPE passType) {
-    double st = util::Now();
+    double st = Now();
     assert(v.size() == _prev.size());
     _inputs.clear();
     _inputs.insert(_inputs.begin(), v.begin(), v.end());
@@ -119,8 +118,8 @@ void Layer::fprop(NVMatrixV& v, PASS_TYPE passType) {
         }
     }
     cudaThreadSynchronize();
-    double ed = util::Now();
-    Log_Info("fprop %s %.9f", getName().c_str(), ed - st);
+    double ed = Now();
+//    Log_Info("fprop %s %.9f", getName().c_str(), ed - st);
     fpropNext(passType);
 }
 
@@ -132,7 +131,7 @@ void Layer::bprop(PASS_TYPE passType) {
 }
 
 void Layer::bprop(NVMatrix& v, PASS_TYPE passType) {
-    double st = util::Now();
+    double st = Now();
     v.transpose(_trans);
     for (int i = 0; i < _prev.size(); i++) {
         _prev[i]->getActs().transpose(_trans);
@@ -141,7 +140,7 @@ void Layer::bprop(NVMatrix& v, PASS_TYPE passType) {
     getActs().transpose(_trans);
     
     bpropCommon(v, passType);
-    
+
     if (isGradProducer()) {
         // First propagate activity gradient to all layers whose activity
         // gradient matrix I'm definitely not sharing.
@@ -161,8 +160,8 @@ void Layer::bprop(NVMatrix& v, PASS_TYPE passType) {
     truncBwdActs();
     
     cudaThreadSynchronize();
-    double ed = util::Now();
-    Log_Info("bprop %s %.9f", getName().c_str(), ed - st);
+    double ed = Now();
+//    Log_Info("bprop %s %.9f", getName().c_str(), ed - st);
 
     if (isGradProducer()) {
         for (int i = 0; i < _prev.size(); i++) {

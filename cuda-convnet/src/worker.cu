@@ -27,8 +27,7 @@
 #include <algorithm>
 #include <util.cuh>
 #include <worker.cuh>
-#include "util/common.h"
-#include "util/logging.h"
+#include "common/logging.h"
 
 
 using namespace std;
@@ -92,17 +91,19 @@ void TrainingWorker::run() {
     _dp->setData(*_data);
     Cost& batchCost = *new Cost(0);
     for (int i = 0; i < _dp->getNumMinibatches(); i++) {
-        double fPropStart = util::Now();
+        double fPropStart = Now();
         _convNet->fprop(i, _test ? PASS_TEST : PASS_TRAIN);
-        double costStart = util::Now();
+        double costStart = Now();
         _convNet->getCost(batchCost);
-        double bPropStart = util::Now();
+        double bPropStart = Now();
         
         if (!_test) {
             _convNet->bprop(PASS_TRAIN);
+
+            // TODO(rjp) -- transmit weights to the parameter server
             _convNet->updateWeights();
         }
-        double done = util::Now();
+        double done = Now();
 
         Log_Info("Finished batch: %d/%d %.9f, %.9f, %.9f, %.9f",
                 i, _dp->getNumMinibatches(),

@@ -36,7 +36,32 @@
 #include <matrix.h>
 #include "util.cuh"
 
+#include <boost/thread.hpp>
+
 using namespace std;
+
+class MPIBatch;
+
+class WeightManager {
+private:
+    static WeightManager* _instance;
+
+    std::map<int64_t, Matrix*> _inc;
+    list<MPIBatch*> _batches;
+    boost::mutex _m;
+
+    WeightManager();
+    void fetchUpdates(int64_t id);
+
+public:
+    void sendUpdate(int64_t id, NVMatrix& m);
+    void applyUpdates(int64_t id, NVMatrix& weights);
+
+    void run();
+    int64_t newId();
+
+    static WeightManager* get();
+};
 
 class Weights {
 private:
@@ -47,9 +72,12 @@ private:
     bool _onGPU, _useGrad;
     int _numUpdates;
     static bool _autoCopyToGPU;
+    int64_t _weightId;
     
     // Non-NULL if these weights are really shared from some other layer
     Weights* _srcWeights;
+
+    WeightManager *_weightMgr;
  
 public:
     NVMatrix& operator*() {
@@ -61,7 +89,10 @@ public:
         _hWeights = &srcWeights.getCPUW();
         _hWeightsInc = &srcWeights.getCPUWInc();
         _mom = srcWeights.getMom();
-        _useGrad = srcWeights.isUseGrad();   
+        _useGrad = srcWeights.isUseGrad();
+        _weightMgr = WeightManager::get();
+        _weightId = _weightMgr->newId();
+
         if (_autoCopyToGPU) {
             copyToGPU();
         }
@@ -71,6 +102,10 @@ public:
         : _srcWeights(NULL), _hWeights(&hWeights), _hWeightsInc(&hWeightsInc), _numUpdates(0),
           _epsW(epsW), _wc(wc), _mom(mom), _useGrad(useGrad), _onGPU(false), _weights(NULL),
           _weightsInc(NULL), _weightsGrad(NULL) {
+
+        _weightMgr = WeightManager::get();
+        _weightId = _weightMgr->newId();
+
         if (_autoCopyToGPU) {
             copyToGPU();
         }
@@ -151,13 +186,26 @@ public:
         // Only true owner of weights updates
         if (_srcWeights == NULL && _epsW > 0) {
             assert(_onGPU);
+
             if (_useGrad) {
                 _weightsInc->add(*_weightsGrad, _mom, 1);
             }
             if (_wc > 0) {
                 _weightsInc->add(*_weights, -_wc * _epsW);
             }
-            _weights->add(*_weightsInc);
+
+            // TODO(rjp) - this is wasteful in the (common) case of a local-only operation - we
+            // end up copying to the managers weights, then copying back.  Maybe the manager can
+            // share it's weight vector in some way?  (Seems unlikely, if we want to just send our
+            // gradients, and not some merged version).
+            //
+            // But: manager could maintain a scratch space for _weightsInc to avoid having to use
+            // double the space (or only allocate when needed).  It looks like _weightsInc is only
+            // used/written to during back-propagation.
+            _weightMgr->sendUpdate(_weightId, *_weightsInc);
+            _weightMgr->applyUpdates(_weightId, *_weights);
+
+            //_weights->add(*_weightsInc);
             _numUpdates = 0;
         }
     }

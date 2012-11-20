@@ -60,6 +60,7 @@ protected:
     int _numGradProducersNext;
     int _actsTarget, _actsGradTarget;
     std::string _name, _type;
+
     void fpropNext(PASS_TYPE passType);
     virtual void truncBwdActs(); 
     virtual void fpropActs(int inpIdx, float scaleTargets, PASS_TYPE passType) = 0;
@@ -123,6 +124,8 @@ protected:
     Weights *_biases;
     float _wStep, _bStep;
     
+    WeightManager *_weightMgr;
+
     void bpropCommon(NVMatrix& v, PASS_TYPE passType);
     virtual void bpropBiases(NVMatrix& v, PASS_TYPE passType) = 0;
     virtual void bpropWeights(NVMatrix& v, int inpIdx, PASS_TYPE passType) = 0;

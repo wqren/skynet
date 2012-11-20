@@ -28,8 +28,6 @@
 #include <nvmatrix.cuh>
 #include <cudaconv2.cuh>
 
-#include "util/common.h"
-
 /*
  * Block size B_YxB_X. Each block applies B_Y * filtersPerThread filters to B_X * imgsPerThread images.
  * threadIdx.x determines image
@@ -1045,7 +1043,6 @@ __global__ void filterActs_YxX_sparse_random(float* images, float* filters, floa
                              cudaFuncSetCacheConfig(filterActs_YxX_color< 4, 32, 1, 8, 3, false, true >, cudaFuncCachePreferShared);
                              filterActs_YxX_color < 4, 32, 1, 8, 3, false, true > <<<blocks, threads>>>(images.getDevData(), filters.getDevData(), targets.getDevData(),
                                          numImages, numFilters, imgSizeY, imgSizeX, filterSize, paddingStart, moduleStride, numModulesY, numModulesX, imgStride, scaleTargets, scaleOutput, conv);
-//                             util::breakpoint();
                          } else {
                              cudaFuncSetCacheConfig(filterActs_YxX_color< 4, 32, 1, 4, 3, false, true >, cudaFuncCachePreferShared);
                              filterActs_YxX_color < 4, 32, 1, 4, 3, false, true > <<<blocks, threads>>>(images.getDevData(), filters.getDevData(), targets.getDevData(),

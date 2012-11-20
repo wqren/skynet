@@ -6,18 +6,14 @@ import cStringIO
 import glob
 import logging
 import numpy as N
-import os
 import random
 import re
-import shelve
 import zipfile
+import cPickle
 
-NUM_BATCHES = 48
-IMAGESIZE = 32
-IMAGES_PER_BATCH = 16384
+from PIL import Image
+
 DATADIR = '/hdfs/imagenet/zip'
-OUTPUTDIR = '/hdfs/imagenet/batch-%d' % IMAGESIZE
-
 def synids():
   ids = glob.glob(DATADIR + '/*.zip')
   ids = [basename(x)[1:-4] for x in ids]
@@ -30,11 +26,29 @@ def synid_to_name():
     syns[k] = v.split(',')[0]
   return syns
 
+def synid_to_label():
+  lines = open('/hdfs/imagenet/synid-to-label').read().strip().split('\n')
+  kv = [l.split(' ') for l in lines]
+  return dict([(k, int(v)) for k, v in kv])
+ 
 SYNIDS = synids()
 SYNID_NAMES = synid_to_name()
-LABEL_NAMES = [SYNID_NAMES.get(s, 'unknown') for s in SYNIDS]
-IMAGES_PER_SYNID = IMAGES_PER_BATCH / len(SYNIDS)
-assert IMAGES_PER_SYNID > 1
+SYNIDS = [synid for synid in SYNIDS if synid in SYNID_NAMES]
+LABEL_NAMES = [SYNID_NAMES[s] for s in SYNIDS]
+SYNID_TO_LABEL = synid_to_label() 
+
+NUM_BATCHES = 100
+IMAGESIZE = 256
+OUTPUTDIR = '/hdfs/imagenet/batch-%d' % IMAGESIZE
+
+HBASE_HOST = 'localhost'
+HBASE_PORT = 9090
+
+print len(SYNIDS), ' categories.'
+
+def hbase_connect():
+  import happybase
+  return happybase.Connection(HBASE_HOST)
 
 def randsyn():
   ids = SYNIDS
@@ -47,45 +61,53 @@ def zip_entry_to_numpy(zf, filename):
   data_file = cStringIO.StringIO(zf.open(filename, 'r').read())
   img = Image.open(data_file)
   img = img.resize((IMAGESIZE, IMAGESIZE), Image.BILINEAR).convert('RGB')
-  return N.array(img, dtype=N.single).reshape(IMAGESIZE * IMAGESIZE * 3)
+  return N.array(img, dtype=N.int8).reshape(IMAGESIZE * IMAGESIZE * 3)
 
-def build_mini_batch(batch_idx):
-  batch_data = []
-  filenames = []
-  names = []
-  labels = []
-  
-  synlist = list(SYNIDS)
-  random.shuffle(synlist)
-  
-  for idx, synid in enumerate(synlist):
-    if idx % 50 == 0:
-      logging.info('Processing synid: %s, %5d/%5d', synid, idx, len(synlist))
-    if not synid in SYNID_NAMES: continue
-    label = SYNID_NAMES[synid]
-    
-    zf = zipfile.ZipFile(DATADIR + '/n%s.zip' % synid)
-    entries = zf.namelist()
-    
-    for _ in range(IMAGES_PER_SYNID):
-      filename = entries[random.randrange(len(entries))]
-      labels.append(int(synid))
-      names.append(label)
-      filenames.append(filename)
-      batch_data.append(zip_entry_to_numpy(zf, filename))
-    
-  shelf_file = '/tmp/data_batch_%d' % batch_idx
-  os.system('rm %s' % shelf_file)
-  s = shelve.open(shelf_file, 'n', protocol=-1, writeback=True)
-  s['num_items'] = len(batch_data)
-  for idx, data in enumerate(batch_data):
-    s['item_%d' % idx] = data
-  s['names'] = names
-  s['labels'] = labels
-  s['filenames'] = filenames
-  s.sync()
-  s.close()
-  
-  os.system('cat %s > %s/%s' % (shelf_file, OUTPUTDIR, basename(shelf_file)))
+def zip_to_hbase(synid):
+  conn = hbase_connect()
+  table = conn.table('imagenet')
+  batch = table.batch(batch_size = 512)
 
+  zf = zipfile.ZipFile(DATADIR + '/n%s.zip' % synid)
+  entries = zf.namelist()
+  for filename in entries:
+    data = zf.open(filename, 'r').read()
+    img = Image.open(cStringIO.StringIO(data))
+    img = img.convert('L')
+    batch.put(str(hash(filename)), 
+        { 'meta:filename': filename,
+          'meta:synid': str(synid),
+          'meta:size': str(len(data)),
+          'meta:sift128': image_to_sift(img, 128).tostring(),
+          'meta:sift64': image_to_sift(img, 64).tostring(),
+          'data:image': data })
+  batch.send()
 
+def transform_image(data):
+  data_file = cStringIO.StringIO(data)
+  img = Image.open(data_file)
+  img = img.resize((IMAGESIZE, IMAGESIZE), Image.NEAREST).convert('RGB')
+  img_out = cStringIO.StringIO()
+  img.save(img_out, 'jpeg')
+  return img_out.getvalue()
+
+def image_to_sift(img, size):
+  img = img.resize((size, size), Image.BICUBIC)
+  img = N.array(img, dtype=N.single)
+  f, d = vl_sift(img)
+  return d
+
+def imagenet_mapper(kv_iter, output):
+  for filename, img in kv_iter:
+    synid = filename.split('_')[0][1:]
+    label_name = SYNID_NAMES[synid]
+    label = SYNID_TO_LABEL[synid]
+    output(filename, { 
+             'data' : transform_image(img), 
+             'label' : label, 
+             'label_name' : label_name, 
+             'synid' : synid })
+
+def imagenet_reducer(kv_iter, output):
+  for filename, data in kv_iter:
+    output(filename, data) 
