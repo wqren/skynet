@@ -66,6 +66,9 @@ private:
     bool _isTrans;
     bool _ownsData;
 
+    // The maximum number of elements we can resize to without having to reallocate.
+    int _maxElements;
+
 //    static std::map<int,curandGenerator_t> rndGen;
     static std::map<int,curandState*> rndDevStates;
     static pthread_mutex_t *_rndMutex;

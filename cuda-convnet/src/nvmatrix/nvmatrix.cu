@@ -64,6 +64,8 @@ void NVMatrix::_init(int numRows, int numCols, int stride, bool isTrans) {
 
     _isTrans = isTrans;
     _devData = NULL;
+    _maxElements = _numElements;
+
     if (_numElements > 0) {
         cublasAlloc(_numElements, sizeof(float), (void**) &_devData);
         checkCublasError("!!!! device memory allocation error\n");
@@ -467,23 +469,27 @@ bool NVMatrix::resize(int numRows, int numCols) {
     bool reallocated = false;
     if (numRows != _numRows || numCols != _numCols) {
         assert(_ownsData);
+
         if (_numElements != numRows * numCols) {
-            if (_numElements > 0) { // free old memory
-                cublasStatus status = cublasFree(_devData);
-                if (status != CUBLAS_STATUS_SUCCESS) {
-                    fprintf(stderr, "!!!! memory free error: %X\n", status);
-                    abort();
+            if (_maxElements < numRows * numCols) {
+                _maxElements = numRows * numCols;
+                if (_numElements > 0) { // free old memory
+                    cublasStatus status = cublasFree(_devData);
+                    if (status != CUBLAS_STATUS_SUCCESS) {
+                        fprintf(stderr, "!!!! memory free error: %X\n", status);
+                        abort();
+                    }
                 }
-            }
-            if (numRows * numCols > 0) { // allocate new memory
-                cublasStatus status = cublasAlloc(numCols * numRows, sizeof(float), (void**) &_devData);
-                if (status != CUBLAS_STATUS_SUCCESS) {
-                    fprintf(stderr, "!!!! device memory allocation error\n");
-                    abort();
+                if (numRows * numCols > 0) { // allocate new memory
+                    cublasStatus status = cublasAlloc(numCols * numRows, sizeof(float), (void**) &_devData);
+                    if (status != CUBLAS_STATUS_SUCCESS) {
+                        fprintf(stderr, "!!!! device memory allocation error\n");
+                        abort();
+                    }
+                    //Log_Info("Allocated to %p", _devData);
+                } else {
+                    _devData = NULL;
                 }
-                //Log_Info("Allocated to %p", _devData);
-            } else {
-                _devData = NULL;
             }
             reallocated = true;
         }
