@@ -14,10 +14,10 @@
 # (it'll almost certainly be under /usr)
 
 # CUDA toolkit installation directory.
-export CUDA_INSTALL_PATH=/scratch/cuda/
+export CUDA_INSTALL_PATH=/home/power/pkg/cuda-4.2
 
 # CUDA SDK installation directory.
-export CUDA_SDK_PATH=/scratch/gpusdk/
+export CUDA_SDK_PATH=/home/power/pkg/gpusdk
 
 # Python include directory. This should contain the file Python.h, among others.
 export PYTHON_INCLUDE_PATH=/usr/include/python2.6
@@ -28,6 +28,11 @@ export NUMPY_INCLUDE_PATH=/usr/lib64/python2.6/site-packages/numpy/core/include/
 
 # ATLAS library directory. This should contain the file libcblas.so, among others.
 export ATLAS_LIB_PATH=/usr/lib/atlas-base
+
+# MPI include directories.  You should be able to get these from running mpicxx -showme:compile
+export MPI_INCLUDE="-I/home/power/pkg/openmpi/include"
+export MPI_LINK="-L/home/power/pkg/openmpi/lib -lmpi_cxx -lmpi -lrdmacm -libverbs -lrt -lnsl -lutil -lm -ldl -lm -lrt -lnsl -lutil -lm"
+
 
 make $*
 

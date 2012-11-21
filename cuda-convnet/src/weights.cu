@@ -25,7 +25,7 @@
  */
 
 #include <weights.cuh>
-#include <boost/thread.hpp>
+// #include <boost/thread.hpp>
 #include <mpi.h>
 
 #include "common/logging.h"
@@ -83,14 +83,14 @@ WeightManager* WeightManager::get() {
 }
 
 WeightManager::WeightManager() {
-    MPI::Init_thread(MPI::THREAD_MULTIPLE);
+    //MPI::Init_thread(MPI::THREAD_MULTIPLE);
     _world = MPI::COMM_WORLD;
 
 //    _mpiThread = new boost::thread(&WeightManager::run, this);
 }
 
 void WeightManager::sendUpdate(int64_t id, NVMatrix& m) {
-    Log_Debug("Sending update: %d", id);
+    Log_Info("Sending update: %d", id);
     Matrix *hostM = new Matrix;
     hostM->resize(m.getNumRows(), m.getNumCols());
     m.copyToHost(*hostM);
@@ -112,7 +112,7 @@ void WeightManager::fetchUpdates(int64_t id) {
     while (_world.Iprobe(MPI::ANY_SOURCE, id, stat)) {
         int64_t source = stat.Get_source();
 
-        Log_Debug("MPI:: recv from %d.%d -- %.5f MB", source, id, stat.Get_count(MPI::BYTE) / 1e6);
+        Log_Info("MPI:: recv from %d.%d -- %.5f MB", source, id, stat.Get_count(MPI::BYTE) / 1e6);
 
         Matrix tmp(1, stat.Get_count(MPI::FLOAT));
         _world.Recv(tmp.getData(), stat.Get_count(MPI::FLOAT), MPI::FLOAT, source, id);

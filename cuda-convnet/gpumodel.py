@@ -37,6 +37,12 @@ import shutil
 import platform
 from os import linesep as NL
 
+import ctypes
+MPILIB = ctypes.CDLL('libmpi.so', ctypes.RTLD_GLOBAL)
+PALLIB = ctypes.CDLL('libopen-pal.so', ctypes.RTLD_GLOBAL)
+from mpi4py import MPI
+
+
 class ModelStateException(Exception):
     pass
 
@@ -313,10 +319,16 @@ class IGPUModel:
             print "    %s: %s" % (dp, desc)
             
     def get_gpus(self):
-        self.device_ids = [get_gpu_lock(g) for g in self.op.get_value('gpu')]
-        if GPU_LOCK_NO_LOCK in self.device_ids:
-            print "Not enough free GPUs!"
-            sys.exit()
+        rank = int(MPI.COMM_WORLD.Get_rank())
+        print >>sys.stderr, 'RANK: ', rank
+        if rank == -1:
+            self.device_ids = [get_gpu_lock(g) for g in self.op.get_value('gpu')]
+            if GPU_LOCK_NO_LOCK in self.device_ids:
+                print "Not enough free GPUs!"
+                sys.exit()
+        else:
+            self.device_ids = [rank % 3]
+            print >>sys.stderr, 'MPI RANK: %d, device %s' % (rank, self.device_ids)
         
     @staticmethod
     def parse_options(op):

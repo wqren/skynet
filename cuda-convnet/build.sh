@@ -1,1 +1,1 @@
-build-ubuntu.sh
+build-rose.sh

@@ -22,10 +22,6 @@
 # NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
 # EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-import ctypes
-MPILIB = ctypes.CDLL('libmpi.so', ctypes.RTLD_GLOBAL)
-PALLIB = ctypes.CDLL('libopen-pal.so', ctypes.RTLD_GLOBAL)
-
 import numpy as n
 import numpy.random as nr
 from util import *

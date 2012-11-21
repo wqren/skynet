@@ -82,14 +82,22 @@ class ImageNetDataProvider(LabeledDataProvider):
         
         datadic = cPickle.load(open(self.data_dir + '/data_batch_%d' % batchnum, 'r'))
         #num_items = datadic['num_items']
-        images = datadic['data']
-        #images = n.array(images)
+	images = n.ndarray((len(datadic['data']), 64 * 64 * 3), dtype=n.single)
+        for idx, jpegdata in enumerate(datadic['data']):
+		img = n.array(Image.open(c.StringIO(jpegdata))).reshape(64 * 64 * 3)
+		images[idx] = img
+	 
+	print 'Normalizing...' 
 	images = images - n.mean(images, axis=0)
         images = images / 256
 	images = images.transpose()
         images = n.require(images, dtype=n.single, requirements='C')
         
-        labels = n.array(datadic['labels']).reshape((1, images.shape[1]))
+        labels = n.array(datadic['labels'])
+	print images.shape
+	print labels.shape
+
+	labels = labels.reshape((1, images.shape[1]))
         labels = n.require(labels, dtype=n.single, requirements='C')
 
         return epoch, batchnum, [images, labels]
