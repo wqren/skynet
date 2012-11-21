@@ -34,23 +34,30 @@ MPI::Intracomm _world;
 
 WeightManager* WeightManager::_instance = NULL;
 
+static double _bytesSent = 0;
+static double _bytesRecv = 0;
+static double _timeWasted = 0;
+
 class SendBatch {
 private:
-    NVMatrix* _ctx;
+    NVMatrix* _m;
     int64_t _id;
     vector<MPI::Request> _reqs;
 public:
     SendBatch(int64_t id, NVMatrix *m) :
-                    _id(id), _ctx(m) {
+                    _id(id), _m(m) {
     }
 
     void Send() {
+        TimerBlock tt(_timeWasted);
         Log_Debug("Sending batch... %d", _id);
         for (int i = 0; i < _world.Get_size(); ++i) {
             if (i == _world.Get_rank()) {
                 continue;
             }
-            _reqs.push_back(_world.Isend(_ctx->getDevData(), _ctx->getNumElements(), MPI::FLOAT, i, _id));
+            // Log_Info("%d sending to %d", _world.Get_rank(), i);
+            _reqs.push_back(_world.Isend(_m->getDevData(), _m->getNumElements(), MPI::FLOAT, i, _id));
+            _bytesSent += _m->getNumElements() * 4;
         }
     }
 
@@ -59,6 +66,7 @@ public:
     }
 
     void Wait() {
+        TimerBlock tt(_timeWasted);
         MPI::Request::Waitall(_reqs.size(), &_reqs[0]);
         for (int i = 0; i < _reqs.size(); ++i) {
             _reqs[i].Free();
@@ -88,7 +96,7 @@ WeightManager::WeightManager() {
 }
 
 void WeightManager::sendUpdate(int64_t id, NVMatrix& m) {
-    Log_Info("Sending update: %d", id);
+    Log_Debug("Sending update: %d", id);
     Context* ctx = _ctx[id];
     if (!ctx) {
         ctx = new Context;
@@ -96,12 +104,17 @@ void WeightManager::sendUpdate(int64_t id, NVMatrix& m) {
         ctx->tmp.resize(m.getNumRows(), m.getNumCols());
         ctx->inc.resize(m.getNumRows(), m.getNumCols());
 
+        ctx->inc.scale(0);
+        ctx->tmp.scale(0);
+
         // Spin up our first receive for this data.
-        _world.Irecv(ctx->tmp.getDevData(), ctx->tmp.getNumElements(), MPI::FLOAT, MPI::ANY_SOURCE, id);
+        ctx->incoming = _world.Irecv(ctx->tmp.getDevData(), ctx->tmp.getNumElements(), MPI::FLOAT, MPI::ANY_SOURCE, id);
     }
 
+    ctx->inc.add(m);
+
     if (ctx->outgoing[id] != NULL) {
-        Log_Info("Waiting for %d", id);
+        Log_Debug("Waiting for %d", id);
         ctx->outgoing[id]->Wait();
     }
 
@@ -113,19 +126,24 @@ void WeightManager::sendUpdate(int64_t id, NVMatrix& m) {
 void WeightManager::applyUpdates(int64_t id, NVMatrix& weights) {
     Log_Debug("Fetching updates... %d", id);
     Context *ctx = _ctx[id];
-    NVMatrix& tgt = ctx->inc;
-    NVMatrix& tmp = ctx->tmp;
-
     // We finished receiving data - increment our local weight delta and open up for another receive.
     MPI::Status stat;
     if (ctx->incoming.Test(stat)) {
-        tgt.add(tmp);
+        //Log_Info("Error: %d", stat.Get_error());
+       // Log_Info("Adding received data to increment: %d, %d", stat.Get_count(MPI::FLOAT), stat.Get_elements(MPI::FLOAT));
+        TimerBlock tt(_timeWasted);
+        ctx->inc.add(ctx->tmp);
+        assert(stat.Get_count(MPI::FLOAT) == ctx->tmp.getNumElements());
+        
         ctx->incoming.Free();
         ctx->incoming = _world.Irecv(ctx->tmp.getDevData(), ctx->tmp.getNumElements(), MPI::FLOAT, MPI::ANY_SOURCE, id);
+        _bytesRecv += ctx->tmp.getNumElements() * 4;
     }
 
     weights.add(ctx->inc);
     ctx->inc.scale(0);
+
+    PERIODIC(1, Log_Info("MPI status: %.2f MB sent, %.2f MB recv, wasted time: %.2f sec", _bytesSent / 1e6, _bytesRecv / 1e6, _timeWasted));
 }
 
 int64_t WeightManager::newId() {
