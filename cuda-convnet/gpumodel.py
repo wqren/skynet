@@ -327,7 +327,7 @@ class IGPUModel:
                 print "Not enough free GPUs!"
                 sys.exit()
         else:
-            self.device_ids = [rank % 3]
+            self.device_ids = [rank % gpu_count()]
             print >>sys.stderr, 'MPI RANK: %d, device %s' % (rank, self.device_ids)
         
     @staticmethod

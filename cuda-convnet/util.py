@@ -28,6 +28,7 @@ import os
 import numpy as n
 from math import sqrt
 
+import glob
 import gzip
 import zipfile
 
@@ -44,6 +45,11 @@ try:
     ms.load()
 except ImportError: # no magic module
     ms = None
+
+def gpu_count():
+  devs = glob.glob('/dev/nvidia*')
+  devs = [d for d in devs if not 'ctl' in d]
+  return len(devs)
 
 def get_gpu_lock(id=-1):
     import imp
