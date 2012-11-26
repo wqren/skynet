@@ -9,4 +9,4 @@ mpirun -n 2 xterm -hold -e gdb -ex run --args python convnet.py \
  --layer-params=./example-layers/layer-params-conv-local-11pct.cfg \
  --data-provider=cifar \
  --test-freq=2 \
- --mini=256
+ --mini=1

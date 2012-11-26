@@ -106,11 +106,8 @@ WeightManager::WeightManager() {
     for (int i = 0; i < _weights.size(); ++i) {\
                 WeightData* w = _weights[i];\
                 if (w == NULL) { continue; }\
-                ScopedLock l(w->mutex);
 
-#define END_LOOP_OVER_WEIGHTS\
-        Sleep(0.001);\
-    }
+#define END_LOOP_OVER_WEIGHTS }
 
 void WeightManager::_recvThreadFn() {
     while (1) {
@@ -118,18 +115,21 @@ void WeightManager::_recvThreadFn() {
             MPI::Status stat;
             if (w->incoming.Test(stat)) {
                 Log_Info("Receiving for %d", i);
+                ScopedLock l(w->mutex);
                 w->inc.add(w->tmp);
                 w->incoming = MPI::COMM_WORLD.Irecv(w->tmp.getData(), w->tmp.getNumElements(), MPI::FLOAT,
                                 MPI::ANY_SOURCE, i);
             }
 
-            END_LOOP_OVER_WEIGHTS
+        END_LOOP_OVER_WEIGHTS
+        Sleep(0.1);
     }
 }
 
 void WeightManager::_sendThreadFn() {
     while (1) {
         BEGIN_LOOP_OVER_WEIGHTS
+            ScopedLock l(w->mutex);
             for (OutList::iterator j = w->outgoing.begin(); j != w->outgoing.end();) {
                 if ((*j)->Finished()) {
                     Log_Info("Send finished...");
@@ -139,7 +139,9 @@ void WeightManager::_sendThreadFn() {
                     ++j;
                 }
             }
-            END_LOOP_OVER_WEIGHTS
+
+        END_LOOP_OVER_WEIGHTS
+        Sleep(0.1);
     }
 }
 
@@ -150,24 +152,23 @@ void WeightManager::sendAndRecv(int64_t id, NVMatrix& delta, NVMatrix& weights) 
         w->tmp.resize(delta.getNumRows(), delta.getNumCols());
         w->inc.resize(delta.getNumRows(), delta.getNumCols());
         // Spin up our first receive for this data.
-        w->incoming = MPI::COMM_WORLD.Irecv(w->tmp.getData(), w->tmp.getNumElements(), MPI::FLOAT, MPI::ANY_SOURCE,
-                        id);
+        w->incoming = MPI::COMM_WORLD.Irecv(w->tmp.getData(), w->tmp.getNumElements(), MPI::FLOAT, MPI::ANY_SOURCE, id);
         _weights[id] = w;
     }
 
     SendBatch* b = new SendBatch(id, delta);
+    weights.add(delta);
 
     WeightData* w = _weights[id];
+    _addTmp.resize(w->inc);
     {
         ScopedLock l(w->mutex);
         w->outgoing.push_back(b);
-    
-        weights.add(delta);
-        _addTmp.resize(w->inc);
         _addTmp.copyFromHost(w->inc);
-        weights.add(_addTmp);
         w->inc.scale(0);
     }
+
+    weights.add(_addTmp);
 }
 
 int64_t WeightManager::newId() {
