@@ -26,6 +26,7 @@
 
 #ifndef THREAD_H_
 #define THREAD_H_
+#include <boost/function.hpp>
 #include <pthread.h>
 #include <stdio.h>
 #include <errno.h>
@@ -85,5 +86,62 @@ public:
         return _threadID;
     }
 };
+
+
+class ScopedLock {
+private:
+    pthread_mutex_t _m;
+public:
+    explicit ScopedLock(pthread_mutex_t& m) :
+                    _m(m) {
+        pthread_mutex_lock(&_m);
+    }
+
+    ~ScopedLock() {
+        pthread_mutex_unlock(&_m);
+    }
+};
+
+class FuncThread {
+private:
+    pthread_t _thread;
+    pthread_attr_t _attr;
+    boost::function<void()> _func;
+public:
+    static void* _runThread(void* v) {
+        boost::function<void()>* f = (boost::function<void()>*) v;
+        (*f)();
+        return NULL;
+    }
+
+    FuncThread(boost::function<void()> f) :
+                    _func(f) {
+        pthread_attr_init(&_attr);
+        pthread_attr_setdetachstate(&_attr, PTHREAD_CREATE_DETACHED);
+        pthread_create(&_thread, &_attr, &_runThread, (void*) &_func);
+    }
+};
+
+template<class T>
+class FreeList {
+public:
+    T* get() {
+        if (_lst.empty()) {
+            return new T;
+        } else {
+            T* t = _lst.back();
+            _lst.pop_back();
+            return t;
+        }
+    }
+
+    void release(T* t) {
+        _lst.push_back(t);
+    }
+
+private:
+    std::vector<T*> _lst;
+};
+
 
 #endif /* THREAD_H_ */

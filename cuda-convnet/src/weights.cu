@@ -26,32 +26,39 @@
 
 #include <weights.cuh>
 #include <mpi.h>
+#include <boost/function.hpp>
+#include <boost/bind.hpp>
 
-#include "common/logging.h"
+#include "thread.h"
+#include "logging.h"
 
 bool Weights::_autoCopyToGPU = false;
-MPI::Intracomm _world;
-
 WeightManager* WeightManager::_instance = NULL;
+
+typedef map<int64_t, FreeList<Matrix> > MatrixFL;
+static MatrixFL _sendTmp;
 
 class SendBatch {
 private:
-    NVMatrix* _ctx;
+    Matrix* _delta;
     int64_t _id;
     vector<MPI::Request> _reqs;
 public:
-    SendBatch(int64_t id, NVMatrix *m) :
-                    _id(id), _ctx(m) {
-    }
-
-    void Send() {
+    SendBatch(int64_t id, const NVMatrix& delta) :
+                    _id(id) {
+        _delta = _sendTmp[delta.getNumElements()].get();
+        delta.copyToHost(*_delta);
         Log_Debug("Sending batch... %d", _id);
-        for (int i = 0; i < _world.Get_size(); ++i) {
-            if (i == _world.Get_rank()) {
+        for (int i = 0; i < MPI::COMM_WORLD.Get_size(); ++i) {
+            if (i == MPI::COMM_WORLD.Get_rank()) {
                 continue;
             }
-            _reqs.push_back(_world.Isend(_ctx->getDevData(), _ctx->getNumElements(), MPI::FLOAT, i, _id));
+            _reqs.push_back(MPI::COMM_WORLD.Isend(_delta->getData(), _delta->getNumElements(), MPI::FLOAT, i, _id));
         }
+    }
+
+    ~SendBatch() {
+        _sendTmp[_delta->getNumElements()].release(_delta);
     }
 
     bool Finished() {
@@ -66,12 +73,18 @@ public:
     }
 };
 
-typedef map<int64_t, SendBatch*> SendMap;
-struct WeightManager::Context {
+typedef vector<SendBatch*> OutList;
+
+struct WeightManager::WeightData {
+    pthread_mutex_t mutex;
     NVMatrix inc;
     NVMatrix tmp;
-    SendMap outgoing;
+    OutList outgoing;
     MPI::Request incoming;
+
+    WeightData() {
+        pthread_mutex_init(&mutex, NULL);
+    }
 };
 
 WeightManager* WeightManager::get() {
@@ -84,55 +97,80 @@ WeightManager* WeightManager::get() {
 }
 
 WeightManager::WeightManager() {
-    _world = MPI::COMM_WORLD;
+    _recvThread = new FuncThread(boost::bind(&WeightManager::_recvThreadFn, this));
+    _sendThread = new FuncThread(boost::bind(&WeightManager::_sendThreadFn, this));
 }
 
-void WeightManager::sendUpdate(int64_t id, NVMatrix& m) {
+#define BEGIN_LOOP_OVER_WEIGHTS\
+    for (int i = 0; i < _weights.size(); ++i) {\
+                WeightData* w = _weights[i];\
+                if (!w) { continue; }\
+                ScopedLock l(w->mutex);
+
+#define END_LOOP_OVER_WEIGHTS\
+        Sleep(0.001);\
+    }
+
+void WeightManager::_recvThreadFn() {
+    while (1) {
+        BEGIN_LOOP_OVER_WEIGHTS
+            MPI::Status stat;
+            if (w->incoming.Test(stat)) {
+                w->inc.add(w->tmp);
+                w->incoming.Free();
+                w->incoming = MPI::COMM_WORLD.Irecv(w->tmp.getDevData(), w->tmp.getNumElements(), MPI::FLOAT,
+                                MPI::ANY_SOURCE, i);
+            }
+
+            END_LOOP_OVER_WEIGHTS
+    }
+}
+
+void WeightManager::_sendThreadFn() {
+    while (1) {
+        BEGIN_LOOP_OVER_WEIGHTS
+            for (OutList::iterator j = w->outgoing.begin(); j != w->outgoing.end();) {
+                if ((*j)->Finished()) {
+                    delete (*j);
+                    j = w->outgoing.erase(j);
+                } else {
+                    ++j;
+                }
+            }
+            END_LOOP_OVER_WEIGHTS
+    }
+}
+
+void WeightManager::sendAndRecv(int64_t id, NVMatrix& delta, NVMatrix& weights) {
     Log_Info("Sending update: %d", id);
-    Context* ctx = _ctx[id];
-    if (!ctx) {
-        ctx = new Context;
-        _ctx[id] = ctx;
-        ctx->tmp.resize(m.getNumRows(), m.getNumCols());
-        ctx->inc.resize(m.getNumRows(), m.getNumCols());
-
+    if (!_weights[id]) {
+        WeightData* w = new WeightData;
+        w->tmp.resize(delta.getNumRows(), delta.getNumCols());
+        w->inc.resize(delta.getNumRows(), delta.getNumCols());
         // Spin up our first receive for this data.
-        _world.Irecv(ctx->tmp.getDevData(), ctx->tmp.getNumElements(), MPI::FLOAT, MPI::ANY_SOURCE, id);
+        w->incoming = MPI::COMM_WORLD.Irecv(w->tmp.getDevData(), w->tmp.getNumElements(), MPI::FLOAT, MPI::ANY_SOURCE,
+                        id);
+        _weights[id] = w;
     }
 
-    if (ctx->outgoing[id] != NULL) {
-        Log_Info("Waiting for %d", id);
-        ctx->outgoing[id]->Wait();
+    SendBatch* b = new SendBatch(id, delta);
+
+    WeightData* w = _weights[id];
+    {
+        ScopedLock l(w->mutex);
+        w->outgoing.push_back(b);
+        weights.add(w->inc);
+        w->inc.scale(0);
     }
 
-    SendBatch *b = new SendBatch(id, &m);
-    b->Send();
-    ctx->outgoing[id] = b;
-}
-
-void WeightManager::applyUpdates(int64_t id, NVMatrix& weights) {
-    Log_Debug("Fetching updates... %d", id);
-    Context *ctx = _ctx[id];
-    NVMatrix& tgt = ctx->inc;
-    NVMatrix& tmp = ctx->tmp;
-
-    // We finished receiving data - increment our local weight delta and open up for another receive.
-    MPI::Status stat;
-    if (ctx->incoming.Test(stat)) {
-        tgt.add(tmp);
-        ctx->incoming.Free();
-        ctx->incoming = _world.Irecv(ctx->tmp.getDevData(), ctx->tmp.getNumElements(), MPI::FLOAT, MPI::ANY_SOURCE, id);
-    }
-
-    weights.add(ctx->inc);
-    ctx->inc.scale(0);
+    weights.add(delta);
 }
 
 int64_t WeightManager::newId() {
-    // Just insert an empty slot for now - the actually context variables will be initialized
+    // Just insert an empty slot for now - the actually WeightData variables will be initialized
     // in sendUpdate, when we know the size of matrix to allocate.
-    int64_t id = _ctx.size();
+    int64_t id = _weights.size();
     Log_Debug("New id: %d", id);
-    _ctx[id] = NULL;
+    _weights.push_back(NULL);
     return id;
 }

@@ -32,8 +32,8 @@
 #include <cutil_inline.h>
 #include <time.h>
 #include <queue.h>
-#include <thread.h>
 #include <math.h>
+#include <thread.h>
 
 #include "layer.cuh"
 #include "data.cuh"

@@ -38,6 +38,8 @@
 
 using namespace std;
 
+class FuncThread;
+
 // Track incoming weight updates from remote machines.  Each Weight instance acquires a unique, consistent
 // identifier via newId() at creation time.  sendUpdate should be called for each new weight delta created.
 //
@@ -45,18 +47,20 @@ using namespace std;
 class WeightManager {
 private:
     static WeightManager* _instance;
+    struct WeightData;
 
-    struct Context;
-    map<int64_t, Context*> _ctx;
+    typedef vector<WeightData*> WeightMap;
+    WeightMap _weights;
 
     WeightManager();
-    void fetchUpdates(int64_t id);
+
+    void _recvThreadFn();
+    void _sendThreadFn();
+
+    FuncThread *_recvThread, *_sendThread;
 
 public:
-    void sendUpdate(int64_t id, NVMatrix& m);
-    void applyUpdates(int64_t id, NVMatrix& weights);
-
-    void run();
+    void sendAndRecv(int64_t id, NVMatrix& delta, NVMatrix& weights);
     int64_t newId();
 
     static WeightManager* get();
@@ -193,16 +197,8 @@ public:
                 _weightsInc->add(*_weights, -_wc * _epsW);
             }
 
-            // TODO(rjp) - this is wasteful in the (common) case of a local-only operation - we
-            // end up copying to the managers weights, then copying back.  Maybe the manager can
-            // share it's weight vector in some way?  (Seems unlikely, if we want to just send our
-            // gradients, and not some merged version).
-            //
-            // But: manager could maintain a scratch space for _weightsInc to avoid having to use
-            // double the space (or only allocate when needed).  It looks like _weightsInc is only
-            // used/written to during back-propagation.
-            _weightMgr->sendUpdate(_weightId, *_weightsInc);
-            _weightMgr->applyUpdates(_weightId, *_weights);
+
+            _weightMgr->sendAndRecv(_weightId, *_weightsInc, *_weights);
 
             //_weights->add(*_weightsInc);
             _numUpdates = 0;
