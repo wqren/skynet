@@ -12,10 +12,15 @@ using namespace std;
 LogLevel currentLogLevel = kLogInfo;
 static const char* logLevels[5] = { "D", "I", "W", "E", "F" };
 
-double Now() {
+double clockAsDouble() {
   timespec tp;
-  clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &tp);
+  clock_gettime(CLOCK_MONOTONIC, &tp);
   return tp.tv_sec + 1e-9 * tp.tv_nsec;
+}
+
+double Now() {
+  static double startTime = clockAsDouble();
+  return clockAsDouble() - startTime;
 }
 
 string Hostname() {

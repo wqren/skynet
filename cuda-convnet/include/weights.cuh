@@ -54,10 +54,11 @@ private:
 
     WeightManager();
 
-    void _recvThreadFn();
-    void _sendThreadFn();
+    // void _recvThreadFn();
+    // void _sendThreadFn();
+    void _mpiThreadFn();
 
-    FuncThread *_recvThread, *_sendThread;
+    FuncThread *_recvThread, *_sendThread, *_mpiThread;
     NVMatrix _addTmp;
 
 public:

@@ -139,7 +139,6 @@ class IGPUModel:
         print "Saving checkpoints to %s" % os.path.join(self.save_path, self.save_file)
         print "========================="
         next_data = self.get_next_batch()
-        print >>sys.stderr, 'Got data...'
         while self.epoch <= self.num_epochs:
             data = next_data
             self.epoch, self.batchnum = data[0], data[1]
@@ -179,21 +178,16 @@ class IGPUModel:
         return len(self.train_batch_range) * (self.epoch - 1) + self.batchnum - self.train_batch_range[0] + 1
     
     def get_next_batch(self, train=True):
-        print >>sys.stderr, 'Fetching batch...'
         dp = self.train_data_provider
         if not train:
             dp = self.test_data_provider
 
-	batch = dp.get_next_batch()
-	print >>sys.stderr, 'Fetch done...'
+        batch = dp.get_next_batch()
         return self.parse_batch_data(batch, train=train)
     
     def parse_batch_data(self, batch_data, train=True):
-        print >>sys.stderr, 'Parsing batch...'
-        d, l = batch_data[2]
-        print >>sys.stderr, 'Starting batch...'
-        print >>sys.stderr, d.shape
-        print >>sys.stderr, l
+        pass
+        #d, l = batch_data[2]
         #return batch_data[0], batch_data[1], batch_data[2]['data']
     
     def start_batch(self, batch_data, train=True):
