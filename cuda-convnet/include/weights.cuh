@@ -58,6 +58,7 @@ private:
     void _sendThreadFn();
 
     FuncThread *_recvThread, *_sendThread;
+    NVMatrix _addTmp;
 
 public:
     void sendAndRecv(int64_t id, NVMatrix& delta, NVMatrix& weights);

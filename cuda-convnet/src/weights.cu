@@ -50,10 +50,11 @@ private:
 public:
     SendBatch(int64_t id, const NVMatrix& delta) :
                     _id(id) {
+        TimerBlock tt(_timeWasted);
         _delta = _sendTmp[delta.getNumElements()].get();
+        _delta->resize(delta.getNumRows(), delta.getNumCols());
         delta.copyToHost(*_delta);
 
-        TimerBlock tt(_timeWasted);
         Log_Debug("Sending batch... %d", _id);
         for (int i = 0; i < MPI::COMM_WORLD.Get_size(); ++i) {
             if (i == MPI::COMM_WORLD.Get_rank()) {
@@ -71,22 +72,14 @@ public:
     bool Finished() {
         return MPI::Request::Testall(_reqs.size(), &_reqs[0]);
     }
-
-    void Wait() {
-        TimerBlock tt(_timeWasted);
-        MPI::Request::Waitall(_reqs.size(), &_reqs[0]);
-        for (int i = 0; i < _reqs.size(); ++i) {
-            _reqs[i].Free();
-        }
-    }
 };
 
 typedef vector<SendBatch*> OutList;
 
 struct WeightManager::WeightData {
     pthread_mutex_t mutex;
-    NVMatrix inc;
-    NVMatrix tmp;
+    Matrix inc;
+    Matrix tmp;
     OutList outgoing;
     MPI::Request incoming;
 
@@ -112,7 +105,7 @@ WeightManager::WeightManager() {
 #define BEGIN_LOOP_OVER_WEIGHTS\
     for (int i = 0; i < _weights.size(); ++i) {\
                 WeightData* w = _weights[i];\
-                if (!w) { continue; }\
+                if (w == NULL) { continue; }\
                 ScopedLock l(w->mutex);
 
 #define END_LOOP_OVER_WEIGHTS\
@@ -124,9 +117,9 @@ void WeightManager::_recvThreadFn() {
         BEGIN_LOOP_OVER_WEIGHTS
             MPI::Status stat;
             if (w->incoming.Test(stat)) {
+                Log_Info("Receiving for %d", i);
                 w->inc.add(w->tmp);
-                w->incoming.Free();
-                w->incoming = MPI::COMM_WORLD.Irecv(w->tmp.getDevData(), w->tmp.getNumElements(), MPI::FLOAT,
+                w->incoming = MPI::COMM_WORLD.Irecv(w->tmp.getData(), w->tmp.getNumElements(), MPI::FLOAT,
                                 MPI::ANY_SOURCE, i);
             }
 
@@ -139,6 +132,7 @@ void WeightManager::_sendThreadFn() {
         BEGIN_LOOP_OVER_WEIGHTS
             for (OutList::iterator j = w->outgoing.begin(); j != w->outgoing.end();) {
                 if ((*j)->Finished()) {
+                    Log_Info("Send finished...");
                     delete (*j);
                     j = w->outgoing.erase(j);
                 } else {
@@ -156,7 +150,7 @@ void WeightManager::sendAndRecv(int64_t id, NVMatrix& delta, NVMatrix& weights) 
         w->tmp.resize(delta.getNumRows(), delta.getNumCols());
         w->inc.resize(delta.getNumRows(), delta.getNumCols());
         // Spin up our first receive for this data.
-        w->incoming = MPI::COMM_WORLD.Irecv(w->tmp.getDevData(), w->tmp.getNumElements(), MPI::FLOAT, MPI::ANY_SOURCE,
+        w->incoming = MPI::COMM_WORLD.Irecv(w->tmp.getData(), w->tmp.getNumElements(), MPI::FLOAT, MPI::ANY_SOURCE,
                         id);
         _weights[id] = w;
     }
@@ -167,11 +161,13 @@ void WeightManager::sendAndRecv(int64_t id, NVMatrix& delta, NVMatrix& weights) 
     {
         ScopedLock l(w->mutex);
         w->outgoing.push_back(b);
-        weights.add(w->inc);
+    
+        weights.add(delta);
+        _addTmp.resize(w->inc);
+        _addTmp.copyFromHost(w->inc);
+        weights.add(_addTmp);
         w->inc.scale(0);
     }
-
-    weights.add(delta);
 }
 
 int64_t WeightManager::newId() {
