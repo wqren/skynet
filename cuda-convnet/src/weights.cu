@@ -93,6 +93,7 @@ public:
 
     void StartRecv() {
       assert(!_started);
+      _started = true;
       _req = MPI::COMM_WORLD.Irecv(_tgt->getData(), _tgt->getNumElements(), MPI::FLOAT, MPI::ANY_SOURCE, _id);
     }
 
@@ -113,14 +114,17 @@ public:
 typedef vector<OutgoingWeights*> OutList;
 
 struct WeightManager::WeightData {
-    pthread_mutex_t mutex;
+    pthread_mutex_t sendMutex;
+    pthread_mutex_t recvMutex;
+
     Matrix inc;
     Matrix tmp;
     OutList outgoing;
     IncomingWeights* incoming;
 
     WeightData() {
-        pthread_mutex_init(&mutex, NULL);
+        pthread_mutex_init(&sendMutex, NULL);
+        pthread_mutex_init(&recvMutex, NULL);
     }
 };
 
@@ -142,7 +146,7 @@ WeightManager::WeightManager() {
 
 void WeightManager::_mpiThreadFn() {
     while (1) {
-        Sleep(0.01);
+        Sleep(0.001);
         for (int i = 0; i < _weights.size(); ++i) {
             WeightData* w = _weights[i];
             if (w == NULL) { 
@@ -150,32 +154,32 @@ void WeightManager::_mpiThreadFn() {
             }
 
             // check for and receive incoming data...
-            ScopedLock l(w->mutex);
             if (w->incoming == NULL) {
                 w->incoming = new IncomingWeights(i, &w->tmp);
                 w->incoming->StartRecv();
             }
 
             if (w->incoming->Finished()) {
+                ScopedLock l(w->recvMutex);
                 w->inc.add(w->tmp);
-                _bytesRecv += w->tmp.getNumElements() * 4;
                 w->incoming->Reset();
                 w->incoming->StartRecv();
+                _bytesRecv += w->tmp.getNumElements() * 4;
             }
 
-            for (OutList::iterator j = w->outgoing.begin(); j != w->outgoing.end();) {
-                OutgoingWeights* o = *j;
-                if (!o->getSent()) {
-                    o->Send();
-                }
-
-                if (o->Finished()) {
-                    delete o;
-                    j = w->outgoing.erase(j);
-                } else {
-                    ++j;
-                }
-            }
+            {
+              ScopedLock l(w->sendMutex);
+              for (OutList::iterator j = w->outgoing.begin(); j != w->outgoing.end();) {
+                  OutgoingWeights* o = *j;
+                  if (!o->getSent()) { o->Send(); }
+                  if (o->Finished()) {
+                      delete o;
+                      j = w->outgoing.erase(j);
+                  } else {
+                      ++j;
+                  }
+              }
+           }
         }
     }
 }
@@ -197,15 +201,19 @@ void WeightManager::sendAndRecv(int64_t id, NVMatrix& delta, NVMatrix& weights) 
     OutgoingWeights* b = new OutgoingWeights(id, delta);
     WeightData* w = _weights[id];
     {
-        ScopedLock l(w->mutex);
+        ScopedLock l(w->sendMutex);
+        w->outgoing.push_back(b);
+    }
+
+    {
+        ScopedLock l(w->recvMutex);
         assert(delta.getNumRows() == w->tmp.getNumRows());
         assert(delta.getNumCols() == w->tmp.getNumCols());
-
-        w->outgoing.push_back(b);
 
         _addTmp.resize(w->inc);
         _addTmp.copyFromHost(w->inc);
         weights.add(_addTmp);
+        //weights.add(w->inc);
         w->inc.scale(0);
     }
 

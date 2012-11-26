@@ -5,7 +5,12 @@
 # Only use Fermi-generation cards. Older cards won't work.
 
 # Try to determine various configurations automatically from numpy/python-config
-./sysinfo.sh
+function fail() {
+  echo Failed to determine system info.
+  exit 1
+}
+
+./sysinfo.sh || fail
 source /tmp/convnet-config
 
 echo Found ATLAS: ${ATLAS_LIB_PATH}
