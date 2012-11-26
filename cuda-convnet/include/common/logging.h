@@ -27,6 +27,15 @@ std::string Hostname();
 timeval timevalFromDouble(double t);
 timespec timespecFromDouble(double t);
 
+struct TimerBlock {
+  double& t_;
+  double start_;
+  TimerBlock(double& t) : t_(t), start_(Now()) {}
+  ~TimerBlock() {
+    t_ += Now() - start_;
+  }
+};
+
 void Sleep(double sleepTime);
 
 

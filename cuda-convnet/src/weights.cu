@@ -32,6 +32,10 @@
 #include "thread.h"
 #include "logging.h"
 
+static double _bytesSent = 0;
+static double _bytesRecv = 0;
+static double _timeWasted = 0;
+
 bool Weights::_autoCopyToGPU = false;
 WeightManager* WeightManager::_instance = NULL;
 
@@ -48,12 +52,15 @@ public:
                     _id(id) {
         _delta = _sendTmp[delta.getNumElements()].get();
         delta.copyToHost(*_delta);
+
+        TimerBlock tt(_timeWasted);
         Log_Debug("Sending batch... %d", _id);
         for (int i = 0; i < MPI::COMM_WORLD.Get_size(); ++i) {
             if (i == MPI::COMM_WORLD.Get_rank()) {
                 continue;
             }
             _reqs.push_back(MPI::COMM_WORLD.Isend(_delta->getData(), _delta->getNumElements(), MPI::FLOAT, i, _id));
+            _bytesSent += delta.getNumElements() * 4;
         }
     }
 
@@ -66,6 +73,7 @@ public:
     }
 
     void Wait() {
+        TimerBlock tt(_timeWasted);
         MPI::Request::Waitall(_reqs.size(), &_reqs[0]);
         for (int i = 0; i < _reqs.size(); ++i) {
             _reqs[i].Free();
