@@ -32,6 +32,7 @@
 #include <nvmatrix_operators.cuh>
 #include <matrix.h>
 #include <convnet.cuh>
+#include <weights.cuh>
 #include <util.cuh>
 
 #include "common/logging.h"
@@ -141,6 +142,7 @@ void ConvNet::initCuda() {
     cudaDeviceSetCacheConfig(cudaFuncCachePreferShared);
     cublasInit();
     NVMatrix::initRandom(time(0));
+    WeightManager::initialize();
     copyToGPU();
 }
 

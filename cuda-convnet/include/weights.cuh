@@ -47,25 +47,26 @@ class FuncThread;
 class WeightManager {
 private:
     static WeightManager* _instance;
-    struct WeightData;
+    WeightManager();
 
+
+    struct WeightData;
     typedef vector<WeightData*> WeightMap;
     WeightMap _weights;
 
-    WeightManager();
+    int _cudaDevice;
 
-    // void _recvThreadFn();
-    // void _sendThreadFn();
     void _mpiThreadFn();
-
-    FuncThread *_recvThread, *_sendThread, *_mpiThread;
-    NVMatrix _addTmp;
+    FuncThread* _mpiThread;
 
 public:
     void sendAndRecv(int64_t id, NVMatrix& delta, NVMatrix& weights);
     int64_t newId();
 
     static WeightManager* get();
+
+    // Run from the GPU thread, initialize any required GPU state.
+    static void initialize();
 };
 
 class Weights {

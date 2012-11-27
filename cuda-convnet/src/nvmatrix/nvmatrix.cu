@@ -153,7 +153,7 @@ void NVMatrix::copyFromHost(const Matrix& hostMatrix) {
         cublasStatus status = cublasSetMatrix(hostMatrix.getLeadingDim(), hostMatrix.getFollowingDim(), sizeof(float),
                                               hostMatrix.getData(), hostMatrix.getLeadingDim(), _devData, _stride);
         if (status != CUBLAS_STATUS_SUCCESS) {
-            fprintf(stderr, "!!!! device access error (write)\n");
+            fprintf(stderr, "!!!! device access error (write) %d\n", status);
             abort();
         }
     }
