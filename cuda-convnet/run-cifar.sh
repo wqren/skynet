@@ -26,4 +26,4 @@ mpirun\
  --data-provider=cifar \
  --test-freq=10 \
  --epochs=500 \
- --mini=512
+ --mini=1

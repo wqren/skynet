@@ -32,10 +32,6 @@
 #include "thread.h"
 #include "logging.h"
 
-static int64_t _bytesSent = 0;
-static int64_t _bytesRecv = 0;
-static double _timeWasted = 0;
-
 bool Weights::_autoCopyToGPU = false;
 WeightManager* WeightManager::_instance = NULL;
 
@@ -47,32 +43,32 @@ private:
     Matrix *_pending;
     Matrix *_tmp;
     int64_t _id;
-    
+
     vector<MPI::Request> _reqs;
 public:
-    OutgoingWeights(int64_t id, int numRows, int numCols) : _id(id) {
+    OutgoingWeights(int64_t id, int numRows, int numCols) :
+                    _id(id) {
         _sending = new Matrix(numRows, numCols);
         _pending = new Matrix(numRows, numCols);
         _tmp = new Matrix(numRows, numCols);
     }
 
-    void Add(const NVMatrix& m) {
-      m.copyToHost(*_tmp);
-      _pending->add(*_tmp);
+    void addDelta(const NVMatrix& m) {
+        m.copyToHost(*_tmp);
+        _pending->add(*_tmp);
     }
 
-    void Send() {
+    void startSend() {
         for (int i = 0; i < MPI::COMM_WORLD.Get_size(); ++i) {
             if (i == MPI::COMM_WORLD.Get_rank()) {
                 continue;
             }
             // Log_Info("Sending batch... %d %d", _id, _out->getNumElements() * 4);
             _reqs.push_back(MPI::COMM_WORLD.Isend(_sending->getData(), _sending->getNumElements(), MPI::FLOAT, i, _id));
-            _bytesSent += _sending->getNumElements() * 4;
         }
     }
 
-    bool Finished() {
+    bool sendDone() {
         return _reqs.empty() || MPI::Request::Testall(_reqs.size(), &_reqs[0]);
     }
 
@@ -90,30 +86,31 @@ private:
     int64_t _id;
     Matrix *_tgt;
 public:
-    IncomingWeights(int64_t id, Matrix* tgt) : _started(false), _id(id), _tgt(tgt) {
+    IncomingWeights(int64_t id, Matrix* tgt) :
+                    _started(false), _id(id), _tgt(tgt) {
     }
 
-    void StartRecv() {
-      assert(!_started);
-      _started = true;
-      _req = MPI::COMM_WORLD.Irecv(_tgt->getData(), _tgt->getNumElements(), MPI::FLOAT, MPI::ANY_SOURCE, _id);
+    void startRecv() {
+        assert(!_started);
+        _started = true;
+        _req = MPI::COMM_WORLD.Irecv(_tgt->getData(), _tgt->getNumElements(), MPI::FLOAT, MPI::ANY_SOURCE, _id);
     }
 
-    bool Finished() {
-      MPI::Status stat;
-      bool done = _req.Test(stat);
-      if (!done) { return false; }
-      Log_Assert(stat.Get_count(MPI::FLOAT) == _tgt->getNumElements(),
-                 "Unexpected recv: %d %d %d", _id, _tgt->getNumElements() * 4, stat.Get_count(MPI::FLOAT));
-      return true;
+    bool recvDone() {
+        MPI::Status stat;
+        bool done = _req.Test(stat);
+        if (!done) {
+            return false;
+        }
+        Log_Assert(stat.Get_count(MPI::FLOAT) == _tgt->getNumElements(), "Unexpected recv: %d %d %d",
+                        _id, _tgt->getNumElements() * 4, stat.Get_count(MPI::FLOAT));
+        return true;
     }
 
-    void Reset() {
-      _started = false;
+    void reset() {
+        _started = false;
     }
 };
-
-static NVMatrix _gpuTmp = NULL;
 
 struct WeightManager::WeightData {
     pthread_mutex_t sendMutex;
@@ -141,37 +138,40 @@ struct WeightManager::WeightData {
         incReady = false;
     }
 
-    void handleRecv() {
+    bool handleRecv() {
         if (incoming == NULL) {
             incoming = new IncomingWeights(id, &recvTmp);
-            incoming->StartRecv();
+            incoming->startRecv();
         }
 
-        if (incoming->Finished()) {
+        if (incoming->recvDone()) {
             {
                 // _gpuTmp is shared across WeightData instances, but is only used from the MPI thread.
                 // _gpuTmp.resize(inc);
                 // _gpuTmp.copyFromHost(recvTmp);
-                
+
                 ScopedLock l(recvMutex);
                 // inc.add(_gpuTmp);
                 inc.add(recvTmp);
                 incReady = true;
             }
-            incoming->Reset();
-            incoming->StartRecv();
-            _bytesRecv += recvTmp.getNumElements() * 4;
+            incoming->reset();
+            incoming->startRecv();
+            return true;
         }
+        return false;
     }
 
-    void handleSend() {
+    bool handleSend() {
         {
-          ScopedLock l(sendMutex);
-          if (outgoing->Finished()) {
-            outgoing->swapPending();
-            outgoing->Send();
-          }
-       }
+            ScopedLock l(sendMutex);
+            if (outgoing->sendDone()) {
+                outgoing->swapPending();
+                outgoing->startSend();
+                return true;
+            }
+            return false;
+        }
     }
 };
 
@@ -185,8 +185,12 @@ WeightManager* WeightManager::get() {
 }
 
 WeightManager::WeightManager() {
-    // _recvThread = new FuncThread(boost::bind(&WeightManager::_recvThreadFn, this));
-    // _sendThread = new FuncThread(boost::bind(&WeightManager::_sendThreadFn, this));
+    _cudaDevice = -1;
+    _pause = _isPaused = false;
+    _mpiThread = NULL;
+    _bytesRecv = 0;
+    _bytesSent = 0;
+    _timeWasted = 0;
 }
 
 void WeightManager::initialize() {
@@ -195,6 +199,20 @@ void WeightManager::initialize() {
     w->_mpiThread = new FuncThread(boost::bind(&WeightManager::_mpiThreadFn, w));
 }
 
+void WeightManager::pauseMPI() {
+    WeightManager::get()->_pause = true;
+
+    while (!WeightManager::get()->_isPaused) {
+        Sleep(0.001);
+    }
+}
+
+void WeightManager::resumeMPI() {
+    WeightManager::get()->_pause = false;
+    while (WeightManager::get()->_isPaused) {
+        Sleep(0.001);
+    }
+}
 
 void WeightManager::_mpiThreadFn() {
     Log_Info("Starting MPI worker thread, using CUDA device: %d", _cudaDevice);
@@ -202,18 +220,26 @@ void WeightManager::_mpiThreadFn() {
     cublasInit();
     while (1) {
         Sleep(0.01);
+        if (_pause) {
+            _isPaused = true;
+        }
+
+        _isPaused = false;
         for (int i = 0; i < _weights.size(); ++i) {
             WeightData* w = _weights[i];
-            if (w == NULL) { 
-                continue; 
+            if (w == NULL) {
+                continue;
             }
 
-            w->handleRecv();
-            w->handleSend();
+            if (w->handleRecv()) {
+                _bytesRecv += w->recvTmp.getNumDataBytes();
+            }
+            if (w->handleSend()) {
+                _bytesSent += w->recvTmp.getNumDataBytes() * (MPI::COMM_WORLD.Get_size() - 1);
+            }
         }
     }
 }
-
 
 void WeightManager::sendAndRecv(int64_t id, NVMatrix& delta, NVMatrix& weights) {
     weights.add(delta);
@@ -228,7 +254,7 @@ void WeightManager::sendAndRecv(int64_t id, NVMatrix& delta, NVMatrix& weights) 
     WeightData* w = _weights[id];
     {
         ScopedLock l(w->sendMutex);
-        w->outgoing->Add(delta);
+        w->outgoing->addDelta(delta);
     }
 
     if (w->incReady) {
@@ -243,7 +269,8 @@ void WeightManager::sendAndRecv(int64_t id, NVMatrix& delta, NVMatrix& weights) 
         w->inc.scale(0);
     }
 
-    PERIODIC(5, Log_Info("MPI status: %.2fMB sent, %.2fMB received, %.2f seconds", _bytesSent / 1e6, _bytesRecv / 1e6, _timeWasted));
+    PERIODIC(5,
+                    Log_Info("MPI status: %.2fMB sent, %.2fMB received, %.2f seconds", _bytesSent / 1e6, _bytesRecv / 1e6, _timeWasted));
 }
 
 int64_t WeightManager::newId() {

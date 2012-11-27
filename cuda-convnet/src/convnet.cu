@@ -151,8 +151,10 @@ void* ConvNet::run() {
 
     while (true) {
         Worker* worker = _workerQueue.dequeue();
+        WeightManager::resumeMPI();
         worker->run();
         delete worker;
+        WeightManager::pauseMPI();
     }
     return NULL;
 }

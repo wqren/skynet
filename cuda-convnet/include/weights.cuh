@@ -49,7 +49,6 @@ private:
     static WeightManager* _instance;
     WeightManager();
 
-
     struct WeightData;
     typedef vector<WeightData*> WeightMap;
     WeightMap _weights;
@@ -59,14 +58,25 @@ private:
     void _mpiThreadFn();
     FuncThread* _mpiThread;
 
+    bool _pause;
+    bool _isPaused;
+
+    int64_t _bytesSent;
+    int64_t _bytesRecv;
+    double _timeWasted;
+
+    NVMatrix _gpuTmp;
 public:
     void sendAndRecv(int64_t id, NVMatrix& delta, NVMatrix& weights);
     int64_t newId();
 
     static WeightManager* get();
 
-    // Run from the GPU thread, initialize any required GPU state.
+    // Start the weight management threads.  Must be run from the GPU thread.
     static void initialize();
+
+    static void pauseMPI();
+    static void resumeMPI();
 };
 
 class Weights {
