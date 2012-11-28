@@ -1,5 +1,6 @@
 /* 
  * Copyright (c) 2011, Alex Krizhevsky (akrizhevsky@gmail.com)
+ * Copyright (c) 2012, Russell Power (russell.power@gmail.com)
  * All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without modification,
