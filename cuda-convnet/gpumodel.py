@@ -37,12 +37,6 @@ import shutil
 import platform
 from os import linesep as NL
 
-import ctypes
-MPILIB = ctypes.CDLL('libmpi.so', ctypes.RTLD_GLOBAL)
-PALLIB = ctypes.CDLL('libopen-pal.so', ctypes.RTLD_GLOBAL)
-from mpi4py import MPI
-
-
 class ModelStateException(Exception):
     pass
 
@@ -58,10 +52,13 @@ class IGPUModel:
         self.dp_params = dp_params
         self.get_gpus()
         self.fill_excused_options()
+
         #assert self.op.all_values_given()
         
         for o in op.get_options_list():
             setattr(self, o.name, o.value)
+        
+        n.random.shuffle(self.train_batch_range)
 
         # these are things that the model must remember but they're not input parameters
         if load_dic:
@@ -88,6 +85,7 @@ class IGPUModel:
         except ModelStateException, e:
             print e
             sys.exit(1)
+        
         for var, val in self.model_state.iteritems():
             setattr(self, var, val)
             
@@ -187,8 +185,6 @@ class IGPUModel:
     
     def parse_batch_data(self, batch_data, train=True):
         pass
-        #d, l = batch_data[2]
-        #return batch_data[0], batch_data[1], batch_data[2]['data']
     
     def start_batch(self, batch_data, train=True):
         self.libmodel.startBatch(batch_data[2], not train)
@@ -313,16 +309,7 @@ class IGPUModel:
             print "    %s: %s" % (dp, desc)
             
     def get_gpus(self):
-        rank = int(MPI.COMM_WORLD.Get_rank())
-        print >>sys.stderr, 'RANK: ', rank
-        if rank == -1:
-            self.device_ids = [get_gpu_lock(g) for g in self.op.get_value('gpu')]
-            if GPU_LOCK_NO_LOCK in self.device_ids:
-                print "Not enough free GPUs!"
-                sys.exit()
-        else:
-            self.device_ids = [rank % gpu_count()]
-            print >>sys.stderr, 'MPI RANK: %d, device %s' % (rank, self.device_ids)
+      raise NotImplementedException
         
     @staticmethod
     def parse_options(op):

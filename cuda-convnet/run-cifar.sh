@@ -15,15 +15,16 @@ set -x
 
 mpirun\
  -n "$NUMPROCS" \
- -output-filename output-$NUMPROCS/mpi \
+ -output-filename "$PWD/output-$NUMPROCS/mpi" \
+ -hostfile ./hostfile \
  python convnet.py \
  --data-path=/home/power/datasets/cifar-10-py-colmajor \
  --save-path=/scratch/tmp \
  --test-range=5 \
  --train-range=1-4 \
- --layer-def=./example-layers/layers-conv-local-11pct.cfg \
- --layer-params=./example-layers/layer-params-conv-local-11pct.cfg \
+ --layer-def=./cifar.cfg \
+ --layer-params=./cifar-params.cfg \
  --data-provider=cifar \
- --test-freq=10 \
- --epochs=500 \
- --mini=1
+ --test-freq=2 \
+ --epochs=20 \
+ --mini=512

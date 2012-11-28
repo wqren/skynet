@@ -117,6 +117,7 @@ struct WeightManager::WeightData {
     pthread_mutex_t recvMutex;
 
     // NVMatrix inc;
+    int incCount;
     Matrix inc;
     bool incReady;
 
@@ -130,12 +131,14 @@ struct WeightManager::WeightData {
         pthread_mutex_init(&sendMutex, NULL);
         pthread_mutex_init(&recvMutex, NULL);
         recvTmp.resize(numRows, numCols);
-        inc.resize(numRows, numCols);
-        incoming = NULL;
         outgoing = new OutgoingWeights(id, numRows, numCols);
 
         this->id = id;
+        
         incReady = false;
+        incCount = 0;
+        inc.resize(numRows, numCols);
+        incoming = NULL;
     }
 
     bool handleRecv() {
@@ -153,6 +156,7 @@ struct WeightManager::WeightData {
                 ScopedLock l(recvMutex);
                 // inc.add(_gpuTmp);
                 inc.add(recvTmp);
+                ++incCount;
                 incReady = true;
             }
             incoming->reset();
@@ -200,18 +204,24 @@ void WeightManager::initialize() {
 }
 
 void WeightManager::pauseMPI() {
+    Log_Debug("Pausing MPI...");
     WeightManager::get()->_pause = true;
 
     while (!WeightManager::get()->_isPaused) {
         Sleep(0.001);
     }
+
+    Log_Debug("MPI thread paused.");
 }
 
 void WeightManager::resumeMPI() {
+    Log_Debug("Resuming MPI...");
     WeightManager::get()->_pause = false;
     while (WeightManager::get()->_isPaused) {
         Sleep(0.001);
     }
+    
+    Log_Debug("MPI thread resumed.");
 }
 
 void WeightManager::_mpiThreadFn() {
@@ -222,6 +232,7 @@ void WeightManager::_mpiThreadFn() {
         Sleep(0.01);
         if (_pause) {
             _isPaused = true;
+            continue;
         }
 
         _isPaused = false;
@@ -242,8 +253,6 @@ void WeightManager::_mpiThreadFn() {
 }
 
 void WeightManager::sendAndRecv(int64_t id, NVMatrix& delta, NVMatrix& weights) {
-    weights.add(delta);
-
     TimerBlock tt(_timeWasted);
     if (!_weights[id]) {
         Log_Info("New weight vector %d - %d", id, delta.getNumElements() * 4);
@@ -264,9 +273,16 @@ void WeightManager::sendAndRecv(int64_t id, NVMatrix& delta, NVMatrix& weights) 
 
         _gpuTmp.resize(w->inc);
         _gpuTmp.copyFromHost(w->inc);
-        weights.add(_gpuTmp);
+        _gpuTmp.add(delta);
+        weights.add(_gpuTmp, 1 / (1.0 + w->incCount));
+        // weights.add(_gpuTmp);
+
+        // w->inc.add(delta);
         // weights.add(w->inc);
         w->inc.scale(0);
+        w->incCount = 0;
+    } else {
+        weights.add(delta);
     }
 
     PERIODIC(5,

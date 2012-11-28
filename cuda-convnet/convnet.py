@@ -35,13 +35,19 @@ from convdata import *
 from os import linesep as NL
 #import pylab as pl
 
+import ctypes
+MPILIB = ctypes.CDLL('libmpi.so', ctypes.RTLD_GLOBAL)
+PALLIB = ctypes.CDLL('libopen-pal.so', ctypes.RTLD_GLOBAL)
+from mpi4py import MPI
+
+
 class ConvNet(IGPUModel):
     def __init__(self, op, load_dic, dp_params={}):
         filename_options = []
         dp_params['multiview_test'] = op.get_value('multiview_test')
         dp_params['crop_border'] = op.get_value('crop_border')
         IGPUModel.__init__(self, "ConvNet", op, load_dic, filename_options, dp_params=dp_params)
-        
+
     def import_model(self):
         lib_name = "pyconvnet" if is_windows_machine() else "_ConvNet"
         print "========================="
@@ -49,6 +55,14 @@ class ConvNet(IGPUModel):
         self.libmodel = __import__(lib_name) 
         
     def init_model_lib(self):
+        num_peers = MPI.COMM_WORLD.Get_size()
+        print 'Resetting model parameters for %d peers.' % num_peers
+        for l in self.layers:
+          if 'epsW' in l: l['epsW'] = [w / num_peers for w in l['epsW']]
+          if 'epsB' in l: l['epsB'] = w / num_peers
+          #if 'momW' in l: l['momW'] = [w / num_peers for w in l['momW']]
+          #if 'momB' in l: l['momB'] = w / num_peers
+
         self.libmodel.initModel(self.layers, self.minibatch_size, self.device_ids[0])
         
     def init_model_state(self):
@@ -83,6 +97,7 @@ class ConvNet(IGPUModel):
                         raise ModelStateException("Invalid layer name '%s'; unable to unshare." % name_str)
         self.op.set_value('conv_to_local', [], parse=False)
         self.op.set_value('unshare_weights', [], parse=False)
+
     
     def get_layer_idx(self, layer_name, check_type=None):
         try:
@@ -108,6 +123,18 @@ class ConvNet(IGPUModel):
         if max(d.dtype != n.single for d in batch_data[2]):
             raise DataProviderException("All matrices returned by data provider must consist of single-precision floats.")
         return batch_data
+
+    def get_gpus(self):
+        rank = int(MPI.COMM_WORLD.Get_rank())
+        print >>sys.stderr, 'RANK: ', rank
+        if rank == -1:
+            self.device_ids = [get_gpu_lock(g) for g in self.op.get_value('gpu')]
+            if GPU_LOCK_NO_LOCK in self.device_ids:
+                print "Not enough free GPUs!"
+                sys.exit()
+        else:
+            self.device_ids = [rank % gpu_count()]
+            print >>sys.stderr, 'MPI RANK: %d, device %s' % (rank, self.device_ids)
 
     def start_batch(self, batch_data, train=True):
         data = batch_data[2]
