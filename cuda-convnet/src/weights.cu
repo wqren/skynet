@@ -29,15 +29,30 @@
 #include <mpi.h>
 #include <boost/function.hpp>
 #include <boost/bind.hpp>
+#include <pthread.h>
+
+#include <vector>
+#include <map>
 
 #include "thread.h"
 #include "logging.h"
 
 bool Weights::_autoCopyToGPU = false;
-WeightManager* WeightManager::_instance = NULL;
+
+NetworkManager* NetworkManager::_instance = NULL;
+
+using namespace std;
 
 typedef map<int64_t, FreeList<Matrix> > MatrixFL;
 
+// We use 2 weight vectors to send out data, 'sending' and 'pending'.
+// The network thread attempts to push data from 'sending' as fast
+// as possible, whether or not updates have been created.
+//
+// Whenever a new delta is produced, we update the 'pending' vector.
+//
+// As soon as a batch of updates is sent, the 'sending' and 'pending'
+// vectors are swapped.
 class OutgoingWeights {
 private:
     Matrix *_sending;
@@ -113,83 +128,63 @@ public:
     }
 };
 
-struct WeightManager::WeightData {
-    pthread_mutex_t sendMutex;
-    pthread_mutex_t recvMutex;
+WeightData::WeightData(int64_t id, int numRows, int numCols) {
+    pthread_mutex_init(&sendMutex, NULL);
+    pthread_mutex_init(&recvMutex, NULL);
+    recvTmp.resize(numRows, numCols);
+    outgoing = new OutgoingWeights(id, numRows, numCols);
+    this->id = id;
 
-    // NVMatrix inc;
-    int incCount;
-    Matrix inc;
-    bool incReady;
+    inc.resize(numRows, numCols);
+    incReady = false;
+    incoming = NULL;
+    incCount = 0;
+}
 
-    Matrix recvTmp;
-    OutgoingWeights* outgoing;
-    IncomingWeights* incoming;
-
-    int64_t id;
-
-    WeightData(int64_t id, int numRows, int numCols) {
-        pthread_mutex_init(&sendMutex, NULL);
-        pthread_mutex_init(&recvMutex, NULL);
-        recvTmp.resize(numRows, numCols);
-        outgoing = new OutgoingWeights(id, numRows, numCols);
-
-        this->id = id;
-        
-        incReady = false;
-        incCount = 0;
-        inc.resize(numRows, numCols);
-        incoming = NULL;
+bool WeightData::handleRecv() {
+    if (incoming == NULL) {
+        incoming = new IncomingWeights(id, &recvTmp);
+        incoming->startRecv();
     }
-
-    bool handleRecv() {
-        if (incoming == NULL) {
-            incoming = new IncomingWeights(id, &recvTmp);
-            incoming->startRecv();
+    if (incoming->recvDone()) {
+        {
+            // _gpuTmp is shared across WeightData instances, but is only used from the MPI thread.
+            // _gpuTmp.resize(inc);
+            // _gpuTmp.copyFromHost(recvTmp);
+            ScopedLock l(recvMutex);
+            // inc.add(_gpuTmp);
+            inc.add(recvTmp);
+            incReady = true;
         }
+        incoming->reset();
+        incoming->startRecv();
+        return true;
+    }
+    return false;
+}
 
-        if (incoming->recvDone()) {
-            {
-                // _gpuTmp is shared across WeightData instances, but is only used from the MPI thread.
-                // _gpuTmp.resize(inc);
-                // _gpuTmp.copyFromHost(recvTmp);
-
-                ScopedLock l(recvMutex);
-                // inc.add(_gpuTmp);
-                inc.add(recvTmp);
-                ++incCount;
-                incReady = true;
-            }
-            incoming->reset();
-            incoming->startRecv();
+bool WeightData::handleSend() {
+    {
+        ScopedLock l(sendMutex);
+        if (outgoing->sendDone()) {
+            outgoing->swapPending();
+            outgoing->startSend();
             return true;
         }
         return false;
     }
+}
 
-    bool handleSend() {
-        {
-            ScopedLock l(sendMutex);
-            if (outgoing->sendDone()) {
-                outgoing->swapPending();
-                outgoing->startSend();
-                return true;
-            }
-            return false;
-        }
-    }
-};
-
-WeightManager* WeightManager::get() {
+NetworkManager* NetworkManager::get() {
     if (_instance != NULL) {
         return _instance;
     }
 
-    _instance = new WeightManager();
+    _instance = new NetworkManager();
     return _instance;
 }
 
-WeightManager::WeightManager() {
+NetworkManager::NetworkManager() {
     _cudaDevice = -1;
     _pause = _isPaused = false;
     _mpiThread = NULL;
@@ -198,34 +193,31 @@ WeightManager::WeightManager() {
     _timeWasted = 0;
 }
 
-void WeightManager::initialize() {
-    WeightManager* w = WeightManager::get();
+void NetworkManager::initialize() {
+    NetworkManager* w = NetworkManager::get();
     assert(cudaGetDevice(&w->_cudaDevice) == cudaSuccess);
-    w->_mpiThread = new FuncThread(boost::bind(&WeightManager::_mpiThreadFn, w));
+    w->_mpiThread = new FuncThread(boost::bind(&NetworkManager::_mpiThreadFn, w));
 }
 
-void WeightManager::pauseMPI() {
-    Log_Debug("Pausing MPI...");
-    WeightManager::get()->_pause = true;
-
-    while (!WeightManager::get()->_isPaused) {
+void NetworkManager::pauseMPI() {
+    NetworkManager::get()->_pause = true;
+    while (!NetworkManager::get()->_isPaused) {
         Sleep(0.001);
     }
 
     Log_Debug("MPI thread paused.");
 }
 
-void WeightManager::resumeMPI() {
-    Log_Debug("Resuming MPI...");
-    WeightManager::get()->_pause = false;
-    while (WeightManager::get()->_isPaused) {
+void NetworkManager::resumeMPI() {
+    NetworkManager::get()->_pause = false;
+    while (NetworkManager::get()->_isPaused) {
         Sleep(0.001);
     }
-    
+
     Log_Debug("MPI thread resumed.");
 }
 
-void WeightManager::_mpiThreadFn() {
+void NetworkManager::_mpiThreadFn() {
     Log_Info("Starting MPI worker thread, using CUDA device: %d", _cudaDevice);
     assert(cudaSetDevice(_cudaDevice) == cudaSuccess);
     cublasInit();
@@ -253,7 +245,9 @@ void WeightManager::_mpiThreadFn() {
     }
 }
 
-void WeightManager::sendAndRecv(int64_t id, NVMatrix& delta, NVMatrix& weights) {
+void NetworkManager::sendAndRecv(int64_t id, NVMatrix& delta, NVMatrix& weights) {
+    weights.add(delta);
+
     TimerBlock tt(_timeWasted);
     if (!_weights[id]) {
         Log_Info("New weight vector %d - %d", id, delta.getNumElements() * 4);
@@ -276,6 +270,7 @@ void WeightManager::sendAndRecv(int64_t id, NVMatrix& delta, NVMatrix& weights) 
         _gpuTmp.copyFromHost(w->inc);
         _gpuTmp.add(delta);
         weights.add(_gpuTmp, 1 / (1.0 + w->incCount));
+
         // weights.add(_gpuTmp);
 
         // w->inc.add(delta);
@@ -290,7 +285,7 @@ void WeightManager::sendAndRecv(int64_t id, NVMatrix& delta, NVMatrix& weights) 
                     Log_Info("MPI status: %.2fMB sent, %.2fMB received, %.2f seconds", _bytesSent / 1e6, _bytesRecv / 1e6, _timeWasted));
 }
 
-int64_t WeightManager::newId() {
+int64_t NetworkManager::newId() {
     // Just insert an empty slot for now - the actually WeightData variables will be initialized
     // in sendUpdate, when we know the size of matrix to allocate.
     int64_t id = _weights.size();
