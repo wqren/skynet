@@ -142,7 +142,7 @@ void ConvNet::initCuda() {
     cudaDeviceSetCacheConfig(cudaFuncCachePreferShared);
     cublasInit();
     NVMatrix::initRandom(time(0));
-    WeightManager::initialize();
+    NetworkManager::initialize();
     copyToGPU();
 }
 
@@ -151,10 +151,10 @@ void* ConvNet::run() {
 
     while (true) {
         Worker* worker = _workerQueue.dequeue();
-        WeightManager::resumeMPI();
+        NetworkManager::resumeMPI();
         worker->run();
         delete worker;
-        WeightManager::pauseMPI();
+        NetworkManager::pauseMPI();
     }
     return NULL;
 }

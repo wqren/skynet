@@ -128,7 +128,7 @@ protected:
     virtual void bpropBiases(NVMatrix& v, PASS_TYPE passType) = 0;
     virtual void bpropWeights(NVMatrix& v, int inpIdx, PASS_TYPE passType) = 0;
 public:
-    WeightLayer(ConvNet* convNet, PyObject* paramsDict, bool trans, bool useGrad);
+    WeightLayer(ConvNet* convNet, PyObject* paramsDict, bool trans);
     virtual void updateWeights();
     virtual void copyToCPU();
     virtual void copyToGPU();
@@ -198,7 +198,7 @@ protected:
     void copyToGPU();
     
 public:
-    LocalLayer(ConvNet* convNet, PyObject* paramsDict, bool useGrad);
+    LocalLayer(ConvNet* convNet, PyObject* paramsDict);
 };
 
 class ConvLayer : public LocalLayer {

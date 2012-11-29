@@ -34,23 +34,73 @@
 #include <assert.h>
 #include <nvmatrix.cuh>
 #include <matrix.h>
+#include <pthread.h>
 #include "util.cuh"
 
 using namespace std;
 
 class FuncThread;
+class OutgoingWeights;
+class IncomingWeights;
+
+//struct WeightCombiner {
+//    double decay;
+//    double momentum;
+//    double learningRate;
+//
+//    WeightCombiner(double momentum, double decay, double learningRate) :
+//                    momentum(momentum), decay(decay), learningRate(learningRate) {
+//    }
+//
+//    // Called when a new gradient is received (from the local or a remote machine).
+//    // The default behavior is to add gradients into the accumulator vector.
+//    virtual void combine(Matrix& gradient, Matrix& target) {
+//        target.add(gradient);
+//    }
+//
+//    // Merge an accumulated set of gradients into our weight vector.
+//    virtual void apply(NVMatrix& weights, NVMatrix& grads) {
+//        if (decay > 0) {
+//            grads.add(weights, -decay * learningRate);
+//        }
+//
+//        weights.add(grads);
+//    }
+//};
+
+// Information about incoming/outgoing weight changes for a single layer.
+struct WeightData {
+    pthread_mutex_t sendMutex;
+    pthread_mutex_t recvMutex;
+
+    // NVMatrix inc;
+    Matrix inc;
+    bool incReady;
+    int incCount;
+
+    Matrix recvTmp;
+    OutgoingWeights* outgoing;
+    IncomingWeights* incoming;
+
+    int64_t id;
+
+    WeightData(int64_t id, int numRows, int numCols);
+
+    bool handleRecv();
+    bool handleSend();
+};
+
+typedef std::vector<WeightData*> WeightMap;
 
 // Track incoming weight updates from remote machines.  Each Weight instance acquires a unique, consistent
 // identifier via newId() at creation time.  sendUpdate should be called for each new weight delta created.
 //
 // Apply adds all current deltas to the given weight vector and resets the weight vector.
-class WeightManager {
+class NetworkManager {
 private:
-    static WeightManager* _instance;
-    WeightManager();
+    static NetworkManager* _instance;
+    NetworkManager();
 
-    struct WeightData;
-    typedef vector<WeightData*> WeightMap;
     WeightMap _weights;
 
     int _cudaDevice;
@@ -70,7 +120,7 @@ public:
     void sendAndRecv(int64_t id, NVMatrix& delta, NVMatrix& weights);
     int64_t newId();
 
-    static WeightManager* get();
+    static NetworkManager* get();
 
     // Start the weight management threads.  Must be run from the GPU thread.
     static void initialize();
@@ -85,7 +135,7 @@ private:
     NVMatrix* _weights, *_weightsInc, *_weightsGrad;
 
     float _epsW, _wc, _mom;
-    bool _onGPU, _useGrad;
+    bool _onGPU;
     int _numUpdates;
     static bool _autoCopyToGPU;
     int64_t _weightId;
@@ -93,7 +143,7 @@ private:
     // Non-NULL if these weights are really shared from some other layer
     Weights* _srcWeights;
 
-    WeightManager *_weightMgr;
+    NetworkManager *_netMgr;
 
 public:
     NVMatrix& operator*() {
@@ -105,22 +155,21 @@ public:
         _hWeights = &srcWeights.getCPUW();
         _hWeightsInc = &srcWeights.getCPUWInc();
         _mom = srcWeights.getMom();
-        _useGrad = srcWeights.isUseGrad();
-        _weightMgr = WeightManager::get();
-        _weightId = _weightMgr->newId();
+        _netMgr = NetworkManager::get();
+        _weightId = _netMgr->newId();
 
         if (_autoCopyToGPU) {
             copyToGPU();
         }
     }
 
-    Weights(Matrix& hWeights, Matrix& hWeightsInc, float epsW, float wc, float mom, bool useGrad)
+    Weights(Matrix& hWeights, Matrix& hWeightsInc, float epsW, float wc, float mom)
         : _srcWeights(NULL), _hWeights(&hWeights), _hWeightsInc(&hWeightsInc), _numUpdates(0),
-          _epsW(epsW), _wc(wc), _mom(mom), _useGrad(useGrad), _onGPU(false), _weights(NULL),
+          _epsW(epsW), _wc(wc), _mom(mom), _onGPU(false), _weights(NULL),
           _weightsInc(NULL), _weightsGrad(NULL) {
 
-        _weightMgr = WeightManager::get();
-        _weightId = _weightMgr->newId();
+        _netMgr = NetworkManager::get();
+        _weightId = _netMgr->newId();
 
         if (_autoCopyToGPU) {
             copyToGPU();
@@ -146,14 +195,9 @@ public:
         return *_weights;
     }
 
-    NVMatrix& getInc() {
-        assert(_onGPU);
-        return *_weightsInc;
-    }
-
     NVMatrix& getGrad() {
         assert(_onGPU);
-        return _useGrad ? *_weightsGrad : *_weightsInc;
+        return *_weightsGrad;
     }
 
     Matrix& getCPUW() {
@@ -182,38 +226,20 @@ public:
 
     // This function is assumed to be called in the order in which the layers
     // were defined
-    void copyToGPU() {
-        if (_srcWeights == NULL) {
-            _weights = new NVMatrix();
-            _weightsInc = new NVMatrix();
-            _weights->copyFromHost(*_hWeights, true);
-            _weightsInc->copyFromHost(*_hWeightsInc, true);
-            _weightsGrad = _useGrad ? new NVMatrix() : NULL;
-        } else {
-            _weights = _srcWeights->_weights;
-            _weightsInc = _srcWeights->_weightsInc;
-            _weightsGrad = _srcWeights->_weightsGrad;
-        }
-        _onGPU = true;
-    }
+    void copyToGPU();
 
-    // Scale your gradient by epsW / numCases!
-    void update() {
+    void update(int numCases) {
         // Only true owner of weights updates
         if (_srcWeights == NULL && _epsW > 0) {
             assert(_onGPU);
 
-            if (_useGrad) {
-                _weightsInc->add(*_weightsGrad, _mom, 1);
-            }
+            _weightsGrad->scale(_epsW / numCases);
+            _weightsInc->add(*_weightsGrad, _mom, 1);
             if (_wc > 0) {
                 _weightsInc->add(*_weights, -_wc * _epsW);
             }
 
-
-            _weightMgr->sendAndRecv(_weightId, *_weightsInc, *_weights);
-
-            //_weights->add(*_weightsInc);
+            _netMgr->sendAndRecv(_weightId, *_weightsInc, *_weights);
             _numUpdates = 0;
         }
     }
@@ -247,10 +273,6 @@ public:
     float getWC() const {
         return _wc;
     }
-
-    bool isUseGrad() const { // is good grammar
-        return _useGrad;
-    }
 };
 
 class WeightList {
@@ -268,38 +290,16 @@ public:
         }
     }
 
-//    WeightList(MatrixV& hWeights, MatrixV& hWeightsInc, floatv& epsW, floatv& wc, floatv& mom, bool useGrads) : _initialized(false) {
-//        initialize(hWeights, hWeightsInc, epsW, wc, mom, useGrads);
-//    }
-
     WeightList() {
     }
-
-//    void initialize(MatrixV& hWeights, MatrixV& hWeightsInc, floatv& epsW, floatv& wc, floatv& mom, bool useGrads) {
-//        for (int i = 0; i < hWeights.size(); i++) {
-//            _weightList.push_back(new Weights(*hWeights[i], *hWeightsInc[i], epsW[i], wc[i], mom[i], useGrads));
-//        }
-//        _initialized = true;
-//        delete &hWeights;
-//        delete &hWeightsInc;
-//        delete &epsW;
-//        delete &wc;
-//        delete &mom;
-//    }
 
     void addWeights(Weights& w) {
         _weightList.push_back(&w);
     }
 
-//    void addWeights(WeightList& wl) {
-//        for (int i = 0; i < wl.getSize(); i++) {
-//            addWeights(wl[i]);
-//        }
-//    }
-
-    void update() {
+    void update(int numCases) {
         for (int i = 0; i < getSize(); i++) {
-            _weightList[i]->update();
+            _weightList[i]->update(numCases);
         }
     }
 

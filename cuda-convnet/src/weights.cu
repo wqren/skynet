@@ -39,6 +39,25 @@
 
 bool Weights::_autoCopyToGPU = false;
 
+void Weights::copyToGPU() {
+    if (_srcWeights == NULL) {
+        _weights = new NVMatrix();
+        _weightsInc = new NVMatrix();
+        _weightsGrad = new NVMatrix();
+        _weights->copyFromHost(*_hWeights, true);
+        _weightsInc->copyFromHost(*_hWeightsInc, true);
+//        _weightsGrad->resize(_weightsInc->getNumRows(), _weightsInc->getNumCols());
+        _weightsGrad->resize(*_weightsInc);
+        Log_Info("Gradients resized to %d %d", _weightsGrad->getNumRows(), _weightsGrad->getNumCols());
+        Log_Info("Weights are sized: %d %d", _weightsInc->getNumRows(), _weightsInc->getNumCols());
+    } else {
+        _weights = _srcWeights->_weights;
+        _weightsInc = _srcWeights->_weightsInc;
+        _weightsGrad = _srcWeights->_weightsGrad;
+    }
+    _onGPU = true;
+}
+
 NetworkManager* NetworkManager::_instance = NULL;
 
 using namespace std;
@@ -131,10 +150,10 @@ public:
 WeightData::WeightData(int64_t id, int numRows, int numCols) {
     pthread_mutex_init(&sendMutex, NULL);
     pthread_mutex_init(&recvMutex, NULL);
-    recvTmp.resize(numRows, numCols);
     outgoing = new OutgoingWeights(id, numRows, numCols);
     this->id = id;
 
+    recvTmp.resize(numRows, numCols);
     inc.resize(numRows, numCols);
     incReady = false;
     incoming = NULL;
