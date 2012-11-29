@@ -562,8 +562,8 @@ void LocalUnsharedLayer::fpropActs(int inpIdx, float scaleTargets, PASS_TYPE pas
 
 void LocalUnsharedLayer::bpropBiases(NVMatrix& v, PASS_TYPE passType) {
     int numCases = v.getNumCols();
-    float scaleBGrad = passType == PASS_GC ? 1 : _biases->getEps() / numCases;
-    _biases->getGrad().addSum(v, 1, 0, scaleBGrad);
+//    float scaleBGrad = passType == PASS_GC ? 1 : _biases->getEps() / numCases;
+    _biases->getGrad().addSum(v, 1, 0, 1);
 }
 
 void LocalUnsharedLayer::bpropWeights(NVMatrix& v, int inpIdx, PASS_TYPE passType) {

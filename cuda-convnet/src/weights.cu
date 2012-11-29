@@ -30,6 +30,7 @@
 #include <boost/function.hpp>
 #include <boost/bind.hpp>
 #include <pthread.h>
+#include <math.h>
 
 #include <vector>
 #include <map>
@@ -39,6 +40,42 @@
 
 bool Weights::_autoCopyToGPU = false;
 
+WeightCombiner::WeightCombiner(double momentum, double decay, double learningRate) :
+                momentum(momentum), decay(decay), learningRate(learningRate), numGradients(0) {
+}
+
+void WeightCombiner::newGradient(Matrix& gradient, Matrix& accumulator) {
+    accumulator.add(gradient);
+    ++numGradients;
+}
+
+void WeightCombiner::apply(NVMatrix& weights, NVMatrix& grads, int numCases) {
+    incTmp.resize(weights);
+    incTmp.scale(0);
+    incTmp.add(incTmp, momentum);
+    incTmp.add(grads, learningRate / numCases);
+    if (decay > 0) {
+        incTmp.add(weights, -decay * learningRate);
+    }
+    weights.add(incTmp);
+}
+
+void AdagradCombiner::newGradient(Matrix& gradient, Matrix& accumulator) {
+    WeightCombiner::newGradient(gradient, accumulator);
+    _magnitude += gradient.norm2();
+}
+
+void AdagradCombiner::apply(NVMatrix& weights, NVMatrix& grads, int numCases) {
+    incTmp.scale(0);
+    //        incTmp.add(incTmp, momentum);
+    double adaptiveRate = learningRate / sqrt(_magnitude);
+    incTmp.add(grads, adaptiveRate / numCases);
+    if (decay > 0) {
+        incTmp.add(weights, -decay * learningRate);
+    }
+    weights.add(incTmp);
+}
+
 Weights::Weights(Weights& srcWeights, float epsW) :
                 _srcWeights(&srcWeights), _epsW(epsW), _wc(0), _onGPU(false), _numUpdates(0), _weights(NULL), _weightsInc(
                                 NULL), _weightsGrad(NULL) {
@@ -46,7 +83,7 @@ Weights::Weights(Weights& srcWeights, float epsW) :
     _hWeightsInc = &srcWeights.getCPUWInc();
     _mom = srcWeights.getMom();
     _netMgr = NetworkManager::get();
-    _weightId = _netMgr->newId();
+    _weightId = _netMgr->newId(new AdagradCombiner(_mom, _wc, _epsW));
     if (_autoCopyToGPU) {
         copyToGPU();
     }
@@ -56,7 +93,7 @@ Weights::Weights(Matrix& hWeights, Matrix& hWeightsInc, float epsW, float wc, fl
                 _srcWeights(NULL), _hWeights(&hWeights), _hWeightsInc(&hWeightsInc), _numUpdates(0), _epsW(epsW), _wc(
                                 wc), _mom(mom), _onGPU(false), _weights(NULL), _weightsInc(NULL), _weightsGrad(NULL) {
     _netMgr = NetworkManager::get();
-    _weightId = _netMgr->newId();
+    _weightId = _netMgr->newId(new AdagradCombiner(_mom, _wc, _epsW));
     if (_autoCopyToGPU) {
         copyToGPU();
     }
@@ -96,14 +133,7 @@ void Weights::update(int numCases) {
     if (_srcWeights == NULL && _epsW > 0) {
         assert(_onGPU);
 
-        _weightsInc->scale(0);
-        _weightsInc->add(*_weightsInc, _mom);
-        _weightsInc->add(*_weightsGrad, _epsW / numCases);
-        if (_wc > 0) {
-            _weightsInc->add(*_weights, -_wc * _epsW);
-        }
-
-        _netMgr->sendAndRecv(_weightId, *_weightsInc, *_weights);
+        _netMgr->sendAndRecv(_weightId, *_weightsGrad, *_weights, numCases);
         _numUpdates = 0;
     }
 }
@@ -197,17 +227,27 @@ public:
     }
 };
 
-WeightData::WeightData(int64_t id, int numRows, int numCols) {
+WeightData::WeightData(int64_t id, WeightCombiner* combiner) {
     pthread_mutex_init(&sendMutex, NULL);
     pthread_mutex_init(&recvMutex, NULL);
-    outgoing = new OutgoingWeights(id, numRows, numCols);
+
+    incReady = false;
+    incCount = 0;
     this->id = id;
+
+    incoming = NULL;
+    outgoing = NULL;
+    this->combiner = combiner;
+
+    initialized = false;
+}
+
+void WeightData::initialize(int numRows, int numCols) {
+    outgoing = new OutgoingWeights(id, numRows, numCols);
 
     recvTmp.resize(numRows, numCols);
     inc.resize(numRows, numCols);
-    incReady = false;
-    incoming = NULL;
-    incCount = 0;
+    initialized = true;
 }
 
 bool WeightData::handleRecv() {
@@ -222,7 +262,8 @@ bool WeightData::handleRecv() {
             // _gpuTmp.copyFromHost(recvTmp);
             ScopedLock l(recvMutex);
             // inc.add(_gpuTmp);
-            inc.add(recvTmp);
+            combiner->newGradient(recvTmp, inc);
+            // inc.add(recvTmp);
             incReady = true;
         }
         incoming->reset();
@@ -300,7 +341,7 @@ void NetworkManager::_mpiThreadFn() {
         _isPaused = false;
         for (int i = 0; i < _weights.size(); ++i) {
             WeightData* w = _weights[i];
-            if (w == NULL) {
+            if (!w->initialized) {
                 continue;
             }
 
@@ -314,51 +355,38 @@ void NetworkManager::_mpiThreadFn() {
     }
 }
 
-void NetworkManager::sendAndRecv(int64_t id, NVMatrix& delta, NVMatrix& weights) {
-    weights.add(delta);
-
+void NetworkManager::sendAndRecv(int64_t id, NVMatrix& gradient, NVMatrix& weights, int numCases) {
     TimerBlock tt(_timeWasted);
-    if (!_weights[id]) {
-        Log_Info("New weight vector %d - %d", id, delta.getNumElements() * 4);
-        WeightData* w = new WeightData(id, delta.getNumRows(), delta.getNumCols());
-        _weights[id] = w;
-    }
 
     WeightData* w = _weights[id];
     {
         ScopedLock l(w->sendMutex);
-        w->outgoing->addDelta(delta);
+        w->combiner->transformGradient(gradient);
+        w->outgoing->addDelta(gradient);
     }
 
     if (w->incReady) {
         ScopedLock l(w->recvMutex);
-        assert(delta.getNumRows() == w->inc.getNumRows());
-        assert(delta.getNumCols() == w->inc.getNumCols());
+        assert(gradient.getNumRows() == w->inc.getNumRows());
+        assert(gradient.getNumCols() == w->inc.getNumCols());
 
         _gpuTmp.resize(w->inc);
         _gpuTmp.copyFromHost(w->inc);
-        _gpuTmp.add(delta);
-        weights.add(_gpuTmp, 1 / (1.0 + w->incCount));
+        _gpuTmp.add(gradient);
 
-        // weights.add(_gpuTmp);
-
-        // w->inc.add(delta);
-        // weights.add(w->inc);
+        w->combiner->apply(weights, _gpuTmp, numCases);
         w->inc.scale(0);
         w->incCount = 0;
     } else {
-        weights.add(delta);
+        w->combiner->apply(weights, gradient, numCases);
     }
 
     PERIODIC(5,
                     Log_Info("MPI status: %.2fMB sent, %.2fMB received, %.2f seconds", _bytesSent / 1e6, _bytesRecv / 1e6, _timeWasted));
 }
 
-int64_t NetworkManager::newId() {
-    // Just insert an empty slot for now - the actually WeightData variables will be initialized
-    // in sendUpdate, when we know the size of matrix to allocate.
+int64_t NetworkManager::newId(WeightCombiner* combiner) {
     int64_t id = _weights.size();
-    Log_Debug("New id: %d", id);
-    _weights.push_back(NULL);
+    _weights.push_back(new WeightData(id, combiner));
     return id;
 }

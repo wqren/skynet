@@ -43,30 +43,42 @@ class FuncThread;
 class OutgoingWeights;
 class IncomingWeights;
 
-//struct WeightCombiner {
-//    double decay;
-//    double momentum;
-//    double learningRate;
-//
-//    WeightCombiner(double momentum, double decay, double learningRate) :
-//                    momentum(momentum), decay(decay), learningRate(learningRate) {
-//    }
-//
-//    // Called when a new gradient is received (from the local or a remote machine).
-//    // The default behavior is to add gradients into the accumulator vector.
-//    virtual void combine(Matrix& gradient, Matrix& target) {
-//        target.add(gradient);
-//    }
-//
-//    // Merge an accumulated set of gradients into our weight vector.
-//    virtual void apply(NVMatrix& weights, NVMatrix& grads) {
-//        if (decay > 0) {
-//            grads.add(weights, -decay * learningRate);
-//        }
-//
-//        weights.add(grads);
-//    }
-//};
+struct WeightCombiner {
+    double decay;
+    double momentum;
+    double learningRate;
+    int numGradients;
+
+    NVMatrix incTmp;
+
+    WeightCombiner(double momentum, double decay, double learningRate);
+
+    // Called when a new gradient is received (from the local or a remote machine).
+    // The default behavior is to add gradients into the accumulator vector.
+    virtual void newGradient(Matrix& gradient, Matrix& accumulator);
+
+    // Optionally transform the outgoing gradient matrix before it is put on the network.
+    virtual void transformGradient(NVMatrix& gradient) {
+    }
+
+    // Merge an accumulated set of gradients into our weight vector.
+    virtual void apply(NVMatrix& weights, NVMatrix& grads, int numCases);
+};
+
+class AdagradCombiner: public WeightCombiner {
+private:
+    double _magnitude;
+
+public:
+    AdagradCombiner(double momentum, double decay, double learningRate) :
+        WeightCombiner(momentum, decay, learningRate) {
+        _magnitude = 0;
+    }
+
+
+    void newGradient(Matrix& gradient, Matrix& accumulator);
+    void apply(NVMatrix& weights, NVMatrix& grads, int numCases);
+};
 
 // Information about incoming/outgoing weight changes for a single layer.
 struct WeightData {
@@ -81,11 +93,14 @@ struct WeightData {
     Matrix recvTmp;
     OutgoingWeights* outgoing;
     IncomingWeights* incoming;
+    WeightCombiner* combiner;
 
     int64_t id;
 
-    WeightData(int64_t id, int numRows, int numCols);
+    bool initialized;
 
+    WeightData(int64_t id, WeightCombiner*);
+    void initialize(int numRows, int numCols);
     bool handleRecv();
     bool handleSend();
 };
@@ -117,8 +132,14 @@ private:
 
     NVMatrix _gpuTmp;
 public:
-    void sendAndRecv(int64_t id, NVMatrix& delta, NVMatrix& weights);
-    int64_t newId();
+    // Send out a new set of gradients, and apply any gradients received from remote machines
+    // (as well as those passed in) to the weight matrix.
+    void sendAndRecv(int64_t id, NVMatrix& gradients, NVMatrix& weights, int numCases);
+
+    // Register this set of weights with the network manager.  The WeightCombiner determines
+    // how to transform outgoing gradients, merge incoming gradients, and apply updates to
+    // the weight vector.
+    int64_t newId(WeightCombiner*);
 
     static NetworkManager* get();
 
@@ -144,6 +165,7 @@ private:
     Weights* _srcWeights;
 
     NetworkManager *_netMgr;
+    WeightCombiner *_weightCombiner;
 
 public:
     NVMatrix& operator*() {
