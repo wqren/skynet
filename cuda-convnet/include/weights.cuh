@@ -56,6 +56,7 @@ struct WeightCombiner {
     // Called when a new gradient is received (from the local or a remote machine).
     // The default behavior is to add gradients into the accumulator vector.
     virtual void newGradient(Matrix& gradient, Matrix& accumulator);
+    virtual void newGradient(NVMatrix& gradient, NVMatrix& accumulator);
 
     // Optionally transform the outgoing gradient matrix before it is put on the network.
     virtual void transformGradient(NVMatrix& gradient) {
@@ -72,11 +73,12 @@ private:
 public:
     AdagradCombiner(double momentum, double decay, double learningRate) :
         WeightCombiner(momentum, decay, learningRate) {
-        _magnitude = 0;
+        _magnitude = 1;
     }
 
 
     void newGradient(Matrix& gradient, Matrix& accumulator);
+    void newGradient(NVMatrix& gradient, NVMatrix& accumulator);
     void apply(NVMatrix& weights, NVMatrix& grads, int numCases);
 };
 

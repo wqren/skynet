@@ -126,15 +126,11 @@ class ConvNet(IGPUModel):
 
     def get_gpus(self):
         rank = int(MPI.COMM_WORLD.Get_rank())
-        print >>sys.stderr, 'RANK: ', rank
-        if rank == -1:
-            self.device_ids = [get_gpu_lock(g) for g in self.op.get_value('gpu')]
-            if GPU_LOCK_NO_LOCK in self.device_ids:
-                print "Not enough free GPUs!"
-                sys.exit()
-        else:
-            self.device_ids = [rank % gpu_count()]
-            print >>sys.stderr, 'MPI RANK: %d, device %s' % (rank, self.device_ids)
+        gpus = self.op.get_value('gpu')
+        self.device_ids = [gpus[rank % gpu_count()]]
+        if self.device_ids[0] == -1:
+          self.device_ids[0] = rank % gpu_count()
+        print >>sys.stderr, 'MPI RANK: %d, device %s' % (rank, self.device_ids)
 
     def start_batch(self, batch_data, train=True):
         data = batch_data[2]

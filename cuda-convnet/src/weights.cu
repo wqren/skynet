@@ -49,6 +49,11 @@ void WeightCombiner::newGradient(Matrix& gradient, Matrix& accumulator) {
     ++numGradients;
 }
 
+void WeightCombiner::newGradient(NVMatrix& gradient, NVMatrix& accumulator) {
+    accumulator.add(gradient);
+    ++numGradients;
+}
+
 void WeightCombiner::apply(NVMatrix& weights, NVMatrix& grads, int numCases) {
     incTmp.resize(weights);
     incTmp.scale(0);
@@ -65,7 +70,13 @@ void AdagradCombiner::newGradient(Matrix& gradient, Matrix& accumulator) {
     _magnitude += gradient.norm2();
 }
 
+void AdagradCombiner::newGradient(NVMatrix& gradient, NVMatrix& accumulator) {
+    WeightCombiner::newGradient(gradient, accumulator);
+    _magnitude += gradient.norm2();
+}
+
 void AdagradCombiner::apply(NVMatrix& weights, NVMatrix& grads, int numCases) {
+    incTmp.resize(weights);
     incTmp.scale(0);
     //        incTmp.add(incTmp, momentum);
     double adaptiveRate = learningRate / sqrt(_magnitude);
@@ -118,8 +129,6 @@ void Weights::copyToGPU() {
         _weightsInc->copyFromHost(*_hWeightsInc, true);
 //        _weightsGrad->resize(_weightsInc->getNumRows(), _weightsInc->getNumCols());
         _weightsGrad->resize(*_weightsInc);
-        Log_Info("Gradients resized to %d %d", _weightsGrad->getNumRows(), _weightsGrad->getNumCols());
-        Log_Info("Weights are sized: %d %d", _weightsInc->getNumRows(), _weightsInc->getNumCols());
     } else {
         _weights = _srcWeights->_weights;
         _weightsInc = _srcWeights->_weightsInc;
@@ -244,7 +253,6 @@ WeightData::WeightData(int64_t id, WeightCombiner* combiner) {
 
 void WeightData::initialize(int numRows, int numCols) {
     outgoing = new OutgoingWeights(id, numRows, numCols);
-
     recvTmp.resize(numRows, numCols);
     inc.resize(numRows, numCols);
     initialized = true;
@@ -359,6 +367,12 @@ void NetworkManager::sendAndRecv(int64_t id, NVMatrix& gradient, NVMatrix& weigh
     TimerBlock tt(_timeWasted);
 
     WeightData* w = _weights[id];
+    if (!w->initialized) {
+        ScopedLock lw(w->sendMutex);
+        ScopedLock lr(w->recvMutex);
+        w->initialize(gradient.getNumRows(), gradient.getNumCols());
+    }
+
     {
         ScopedLock l(w->sendMutex);
         w->combiner->transformGradient(gradient);
@@ -372,8 +386,7 @@ void NetworkManager::sendAndRecv(int64_t id, NVMatrix& gradient, NVMatrix& weigh
 
         _gpuTmp.resize(w->inc);
         _gpuTmp.copyFromHost(w->inc);
-        _gpuTmp.add(gradient);
-
+        w->combiner->newGradient(_gpuTmp, gradient);
         w->combiner->apply(weights, _gpuTmp, numCases);
         w->inc.scale(0);
         w->incCount = 0;
