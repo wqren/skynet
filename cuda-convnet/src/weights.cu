@@ -62,8 +62,8 @@ void WeightCombiner::apply(NVMatrix& weights, NVMatrix& previous, NVMatrix& grad
     if (decay > 0) {
         incTmp.add(weights, -decay * learningRate);
     }
-    previous.copy(incTmp);
     weights.add(incTmp);
+    previous.copy(incTmp);
 }
 
 void AdagradCombiner::newGradient(Matrix& gradient, Matrix& accumulator) {
@@ -85,8 +85,8 @@ void AdagradCombiner::apply(NVMatrix& weights, NVMatrix& previous, NVMatrix& gra
     if (decay > 0) {
         incTmp.add(weights, -decay * learningRate);
     }
-    previous.copy(incTmp);
     weights.add(incTmp);
+    previous.copy(incTmp);
 }
 
 Weights::Weights(Weights& srcWeights, float epsW) :
@@ -375,7 +375,7 @@ void NetworkManager::sendAndRecv(int64_t id, NVMatrix& gradient, NVMatrix& incre
         w->initialize(gradient.getNumRows(), gradient.getNumCols());
     }
 
-    {
+    if (MPI::COMM_WORLD.Get_size() > 1) {
         ScopedLock l(w->sendMutex);
         w->combiner->transformGradient(gradient);
         w->outgoing->addDelta(gradient);
@@ -393,11 +393,13 @@ void NetworkManager::sendAndRecv(int64_t id, NVMatrix& gradient, NVMatrix& incre
         w->inc.scale(0);
         w->incCount = 0;
     } else {
+        _gpuTmp.resize(w->inc);
+        _gpuTmp.scale(0);
+        w->combiner->newGradient(_gpuTmp, gradient);
         w->combiner->apply(weights, increment, gradient, numCases);
     }
 
-    PERIODIC(5,
-                    Log_Info("MPI status: %.2fMB sent, %.2fMB received, %.2f seconds", _bytesSent / 1e6, _bytesRecv / 1e6, _timeWasted));
+    PERIODIC(30, Log_Info("MPI status: %.2fMB sent, %.2fMB received, %.2f seconds", _bytesSent / 1e6, _bytesRecv / 1e6, _timeWasted));
 }
 
 int64_t NetworkManager::newId(WeightCombiner* combiner) {
