@@ -39,6 +39,39 @@
 
 bool Weights::_autoCopyToGPU = false;
 
+Weights::Weights(Weights& srcWeights, float epsW) :
+                _srcWeights(&srcWeights), _epsW(epsW), _wc(0), _onGPU(false), _numUpdates(0), _weights(NULL), _weightsInc(
+                                NULL), _weightsGrad(NULL) {
+    _hWeights = &srcWeights.getCPUW();
+    _hWeightsInc = &srcWeights.getCPUWInc();
+    _mom = srcWeights.getMom();
+    _netMgr = NetworkManager::get();
+    _weightId = _netMgr->newId();
+    if (_autoCopyToGPU) {
+        copyToGPU();
+    }
+}
+
+Weights::Weights(Matrix& hWeights, Matrix& hWeightsInc, float epsW, float wc, float mom) :
+                _srcWeights(NULL), _hWeights(&hWeights), _hWeightsInc(&hWeightsInc), _numUpdates(0), _epsW(epsW), _wc(
+                                wc), _mom(mom), _onGPU(false), _weights(NULL), _weightsInc(NULL), _weightsGrad(NULL) {
+    _netMgr = NetworkManager::get();
+    _weightId = _netMgr->newId();
+    if (_autoCopyToGPU) {
+        copyToGPU();
+    }
+}
+
+Weights::~Weights() {
+    delete _hWeights;
+    delete _hWeightsInc;
+    if (_srcWeights == NULL) {
+        delete _weights;
+        delete _weightsInc;
+        delete _weightsGrad;
+    }
+}
+
 void Weights::copyToGPU() {
     if (_srcWeights == NULL) {
         _weights = new NVMatrix();
@@ -56,6 +89,23 @@ void Weights::copyToGPU() {
         _weightsGrad = _srcWeights->_weightsGrad;
     }
     _onGPU = true;
+}
+
+void Weights::update(int numCases) {
+    // Only true owner of weights updates
+    if (_srcWeights == NULL && _epsW > 0) {
+        assert(_onGPU);
+
+        _weightsInc->scale(0);
+        _weightsInc->add(*_weightsInc, _mom);
+        _weightsInc->add(*_weightsGrad, _epsW / numCases);
+        if (_wc > 0) {
+            _weightsInc->add(*_weights, -_wc * _epsW);
+        }
+
+        _netMgr->sendAndRecv(_weightId, *_weightsInc, *_weights);
+        _numUpdates = 0;
+    }
 }
 
 NetworkManager* NetworkManager::_instance = NULL;
