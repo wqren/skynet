@@ -54,14 +54,15 @@ void WeightCombiner::newGradient(NVMatrix& gradient, NVMatrix& accumulator) {
     ++numGradients;
 }
 
-void WeightCombiner::apply(NVMatrix& weights, NVMatrix& grads, int numCases) {
+void WeightCombiner::apply(NVMatrix& weights, NVMatrix& previous, NVMatrix& grads, int numCases) {
     incTmp.resize(weights);
     incTmp.scale(0);
-    incTmp.add(incTmp, momentum);
+    incTmp.add(previous, momentum);
     incTmp.add(grads, learningRate / numCases);
     if (decay > 0) {
         incTmp.add(weights, -decay * learningRate);
     }
+    previous.copy(incTmp);
     weights.add(incTmp);
 }
 
@@ -75,7 +76,7 @@ void AdagradCombiner::newGradient(NVMatrix& gradient, NVMatrix& accumulator) {
     _magnitude += gradient.norm2();
 }
 
-void AdagradCombiner::apply(NVMatrix& weights, NVMatrix& grads, int numCases) {
+void AdagradCombiner::apply(NVMatrix& weights, NVMatrix& previous, NVMatrix& grads, int numCases) {
     incTmp.resize(weights);
     incTmp.scale(0);
     //        incTmp.add(incTmp, momentum);
@@ -84,6 +85,7 @@ void AdagradCombiner::apply(NVMatrix& weights, NVMatrix& grads, int numCases) {
     if (decay > 0) {
         incTmp.add(weights, -decay * learningRate);
     }
+    previous.copy(incTmp);
     weights.add(incTmp);
 }
 
@@ -142,7 +144,7 @@ void Weights::update(int numCases) {
     if (_srcWeights == NULL && _epsW > 0) {
         assert(_onGPU);
 
-        _netMgr->sendAndRecv(_weightId, *_weightsGrad, *_weights, numCases);
+        _netMgr->sendAndRecv(_weightId, *_weightsGrad, *_weightsInc, *_weights, numCases);
         _numUpdates = 0;
     }
 }
@@ -363,7 +365,7 @@ void NetworkManager::_mpiThreadFn() {
     }
 }
 
-void NetworkManager::sendAndRecv(int64_t id, NVMatrix& gradient, NVMatrix& weights, int numCases) {
+void NetworkManager::sendAndRecv(int64_t id, NVMatrix& gradient, NVMatrix& increment, NVMatrix& weights, int numCases) {
     TimerBlock tt(_timeWasted);
 
     WeightData* w = _weights[id];
@@ -387,11 +389,11 @@ void NetworkManager::sendAndRecv(int64_t id, NVMatrix& gradient, NVMatrix& weigh
         _gpuTmp.resize(w->inc);
         _gpuTmp.copyFromHost(w->inc);
         w->combiner->newGradient(_gpuTmp, gradient);
-        w->combiner->apply(weights, _gpuTmp, numCases);
+        w->combiner->apply(weights, increment, _gpuTmp, numCases);
         w->inc.scale(0);
         w->incCount = 0;
     } else {
-        w->combiner->apply(weights, gradient, numCases);
+        w->combiner->apply(weights, increment, gradient, numCases);
     }
 
     PERIODIC(5,

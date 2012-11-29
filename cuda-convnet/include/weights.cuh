@@ -63,7 +63,7 @@ struct WeightCombiner {
     }
 
     // Merge an accumulated set of gradients into our weight vector.
-    virtual void apply(NVMatrix& weights, NVMatrix& grads, int numCases);
+    virtual void apply(NVMatrix& weights, NVMatrix& previousIncrement, NVMatrix& grads, int numCases);
 };
 
 class AdagradCombiner: public WeightCombiner {
@@ -79,7 +79,7 @@ public:
 
     void newGradient(Matrix& gradient, Matrix& accumulator);
     void newGradient(NVMatrix& gradient, NVMatrix& accumulator);
-    void apply(NVMatrix& weights, NVMatrix& grads, int numCases);
+    void apply(NVMatrix& weights, NVMatrix& previousIncrement, NVMatrix& grads, int numCases);
 };
 
 // Information about incoming/outgoing weight changes for a single layer.
@@ -136,7 +136,7 @@ private:
 public:
     // Send out a new set of gradients, and apply any gradients received from remote machines
     // (as well as those passed in) to the weight matrix.
-    void sendAndRecv(int64_t id, NVMatrix& gradients, NVMatrix& weights, int numCases);
+    void sendAndRecv(int64_t id, NVMatrix& gradients, NVMatrix& increment, NVMatrix& weights, int numCases);
 
     // Register this set of weights with the network manager.  The WeightCombiner determines
     // how to transform outgoing gradients, merge incoming gradients, and apply updates to
