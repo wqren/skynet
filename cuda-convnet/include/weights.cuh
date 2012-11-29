@@ -233,14 +233,15 @@ public:
         if (_srcWeights == NULL && _epsW > 0) {
             assert(_onGPU);
 
-            _weightsGrad->scale(_epsW / numCases);
-            _weightsInc->add(*_weightsGrad, _mom, 1);
+            _weightsInc->add(*_weightsGrad, _epsW / numCases);
+            _weightsInc->add(*_weightsInc, _mom, 1);
             if (_wc > 0) {
                 _weightsInc->add(*_weights, -_wc * _epsW);
             }
 
             _netMgr->sendAndRecv(_weightId, *_weightsInc, *_weights);
             _numUpdates = 0;
+            _weightsInc->scale(0);
         }
     }
 
