@@ -56,6 +56,13 @@
 #define CURAND_CALL(x) do { if((x) != CURAND_STATUS_SUCCESS) { \
                             printf("Error at %s:%d\n",__FILE__,__LINE__);\
                             abort();}} while(0)
+#define CHECK_CUDA(msg)\
+    cudaError_t err = cudaGetLastError();\
+    if( cudaSuccess != err) {\
+        FPRINTF((stderr, "%s(%i) : CHECK_CUDA() CUTIL CUDA error : %s : (%d) %s.\n",\
+                __FILE__, __LINE__, msg, (int)err, cudaGetErrorString( err ) ));\
+        abort();\
+    }
 
 class NVMatrix {
 private:
@@ -255,7 +262,7 @@ public:
         dim3 threads(ELTWISE_THREADS_X, ELTWISE_THREADS_Y);
         if (target.isTrans() == isTrans()) {
             kEltwiseUnaryOp<Op><<<blocks, threads>>>(_devData, target._devData, height, width, getStride(), target.getStride(), op);
-            cutilCheckMsg("kEltwiseUnaryOp: Kernel execution failed");
+            CHECK_CUDA("kEltwiseUnaryOp: Kernel execution failed");
         } else {
             bool checkBounds = !(width % ELTWISE_THREADS_X == 0 && height % ELTWISE_THREADS_X == 0);
             if (checkBounds) {
@@ -263,7 +270,7 @@ public:
             } else {
                 kEltwiseUnaryOpTrans<Op, false><<<blocks, threads>>>(_devData, target._devData, height, width, getStride(), target.getStride(), op);
             }
-            cutilCheckMsg("kEltwiseUnaryOpTrans: Kernel execution failed");
+            CHECK_CUDA("kEltwiseUnaryOpTrans: Kernel execution failed");
         }
     }
     
@@ -289,7 +296,7 @@ public:
         if (target.isTrans() == isTrans() && target.isTrans() == b.isTrans()) {
             kEltwiseBinaryOp<Op><<<blocks, threads>>>(_devData, b._devData, target._devData, height, width, getStride(),
                                                       b.getStride(), target.getStride(), op);
-            cutilCheckMsg("kEltwiseBinaryOp: Kernel execution failed");
+            CHECK_CUDA("kEltwiseBinaryOp: Kernel execution failed");
         } else {
             //  both x here since y divides x
             bool checkBounds = !(width % ELTWISE_THREADS_X == 0 && height % ELTWISE_THREADS_X == 0);
@@ -318,7 +325,7 @@ public:
                                                                getStride(), target.getStride(), op);
                 }
             }
-            cutilCheckMsg("kEltwiseBinaryOpTrans: Kernel execution failed");
+            CHECK_CUDA("kEltwiseBinaryOpTrans: Kernel execution failed");
         }
     }
     
@@ -338,7 +345,7 @@ public:
         dim3 threads(ELTWISE_THREADS_X, ELTWISE_THREADS_Y);
         kEltwiseTernaryOp<Op><<<blocks, threads>>>(_devData, b._devData, c._devData, target._devData, height, width,
                                                    getStride(), b.getStride(), c.getStride(), target.getStride(), op);
-        cutilCheckMsg("kEltwiseTernaryOp: Kernel execution failed");
+        CHECK_CUDA("kEltwiseTernaryOp: Kernel execution failed");
     }
 
     bool resize(int numRows, int numCols);
@@ -449,7 +456,7 @@ public:
         } else {
             kRowVectorOp<Op><<<blocks,threads>>>(_devData, vec._devData, target._devData, width, height, getStride(), target.getStride(), op);
         }
-        cutilCheckMsg("Kernel execution failed");
+        CHECK_CUDA("Kernel execution failed");
     //    cudaThreadSynchronize();
     }
 
