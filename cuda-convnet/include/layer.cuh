@@ -127,9 +127,7 @@ protected:
     void bpropCommon(NVMatrix& v, PASS_TYPE passType);
     virtual void bpropBiases(NVMatrix& v, PASS_TYPE passType) = 0;
     virtual void bpropWeights(NVMatrix& v, int inpIdx, PASS_TYPE passType) = 0;
-    virtual int getNumCases(NVMatrix& v) {
-      return v.getNumRows();
-    }
+    virtual int getNumCases(const NVMatrix& v) = 0;
 public:
     WeightLayer(ConvNet* convNet, PyObject* paramsDict, bool trans);
     virtual void updateWeights();
@@ -145,6 +143,9 @@ protected:
     void bpropActs(NVMatrix& v, int inpIdx, float scaleTargets, PASS_TYPE passType);
     void bpropBiases(NVMatrix& v, PASS_TYPE passType);
     void bpropWeights(NVMatrix& v, int inpIdx, PASS_TYPE passType);
+    int getNumCases(const NVMatrix& v) { 
+        return v.getNumRows();
+    }
 public:
     FCLayer(ConvNet* convNet, PyObject* paramsDict);
 };
@@ -199,7 +200,7 @@ protected:
     int _modulesX, _modules, _numFilters;
 
     void copyToGPU();
-    int getNumCases(NVMatrix& v) {
+    int getNumCases(const NVMatrix& v) {
       return v.getNumCols();
     }
     

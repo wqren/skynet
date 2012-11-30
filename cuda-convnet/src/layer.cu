@@ -323,8 +323,12 @@ void WeightLayer::bpropCommon(NVMatrix& v, PASS_TYPE passType) {
 }
 
 void WeightLayer::updateWeights() {
-    _weights.update(getNumCases(getActsGrad()));
-    _biases.update(getNumCases(getActsGrad()));
+    const NVMatrix& v = getActsGrad();
+    int numCases = getNumCases(v);
+    _weights.update(numCases);
+    // Log_Info("Update bias... %f %f", _biases->getGrad().norm2(), _biases->getW().norm2());
+    _biases->update(numCases);
+    // Log_Info("Done... %f %f", _biases->getGrad().norm2(), _biases->getW().norm2());
 }
 
 void WeightLayer::copyToCPU() {
