@@ -127,6 +127,9 @@ protected:
     void bpropCommon(NVMatrix& v, PASS_TYPE passType);
     virtual void bpropBiases(NVMatrix& v, PASS_TYPE passType) = 0;
     virtual void bpropWeights(NVMatrix& v, int inpIdx, PASS_TYPE passType) = 0;
+    virtual int getNumCases(NVMatrix& v) {
+      return v.getNumRows();
+    }
 public:
     WeightLayer(ConvNet* convNet, PyObject* paramsDict, bool trans);
     virtual void updateWeights();
@@ -196,6 +199,9 @@ protected:
     int _modulesX, _modules, _numFilters;
 
     void copyToGPU();
+    int getNumCases(NVMatrix& v) {
+      return v.getNumCols();
+    }
     
 public:
     LocalLayer(ConvNet* convNet, PyObject* paramsDict);

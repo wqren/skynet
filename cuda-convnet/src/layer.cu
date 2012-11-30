@@ -96,7 +96,6 @@ void Layer::fprop(NVMatrix& v, PASS_TYPE passType) {
 }
 
 void Layer::fprop(NVMatrixV& v, PASS_TYPE passType) {
-    double st = Now();
     assert(v.size() == _prev.size());
     _inputs.clear();
     _inputs.insert(_inputs.begin(), v.begin(), v.end());
@@ -117,9 +116,6 @@ void Layer::fprop(NVMatrixV& v, PASS_TYPE passType) {
             fpropActs(i, _actsTarget >= 0 || i > 0, passType);
         }
     }
-    cudaThreadSynchronize();
-    double ed = Now();
-//    Log_Info("fprop %s %.9f", getName().c_str(), ed - st);
     fpropNext(passType);
 }
 
@@ -131,7 +127,6 @@ void Layer::bprop(PASS_TYPE passType) {
 }
 
 void Layer::bprop(NVMatrix& v, PASS_TYPE passType) {
-    double st = Now();
     v.transpose(_trans);
     for (int i = 0; i < _prev.size(); i++) {
         _prev[i]->getActs().transpose(_trans);
@@ -159,10 +154,6 @@ void Layer::bprop(NVMatrix& v, PASS_TYPE passType) {
     }
     truncBwdActs();
     
-    cudaThreadSynchronize();
-    double ed = Now();
-//    Log_Info("bprop %s %.9f", getName().c_str(), ed - st);
-
     if (isGradProducer()) {
         for (int i = 0; i < _prev.size(); i++) {
             if (_prev[i]->isGradConsumer()) {
@@ -332,9 +323,8 @@ void WeightLayer::bpropCommon(NVMatrix& v, PASS_TYPE passType) {
 }
 
 void WeightLayer::updateWeights() {
-    int numCases = getActsGrad().getNumRows();
-    _weights.update(numCases);
-    _biases->update(numCases);
+    _weights.update(getNumCases(getActsGrad()));
+    _biases.update(getNumCases(getActsGrad()));
 }
 
 void WeightLayer::copyToCPU() {
@@ -386,16 +376,8 @@ void FCLayer::bpropBiases(NVMatrix& v, PASS_TYPE passType) {
 }
 
 void FCLayer::bpropWeights(NVMatrix& v, int inpIdx, PASS_TYPE passType) {
-    int numCases = v.getNumRows();
-
     NVMatrix& prevActs_T = _prev[inpIdx]->getActs().getTranspose();
-//    float scaleInc = (_weights[inpIdx].getNumUpdates() == 0 && passType != PASS_GC) * _weights[inpIdx].getMom();
-//    float scaleGrad = passType == PASS_GC ? 1 : _weights[inpIdx].getEps() / numCases;
-//    _weights[inpIdx].getInc().addProduct(prevActs_T, v, scaleInc, scaleGrad);
-
-    NVMatrix& tgt = _weights[inpIdx].getGrad();
-    tgt.addProduct(prevActs_T, v);
-    
+    _weights[inpIdx].getGrad().addProduct(prevActs_T, v, 0, 1);
     delete &prevActs_T;
 }
 
@@ -478,8 +460,6 @@ void ConvLayer::fpropActs(int inpIdx, float scaleTargets, PASS_TYPE passType) {
 }
 
 void ConvLayer::bpropBiases(NVMatrix& v, PASS_TYPE passType) {
-    int numCases = v.getNumCols();
-//    float scaleBGrad = passType == PASS_GC ? 1 : _biases->getEps() / numCases;
     if (_sharedBiases) {
         v.reshape(_numFilters, v.getNumElements() / _numFilters);
         _biases->getGrad().addSum(v, 1, 0, 1);
@@ -490,10 +470,7 @@ void ConvLayer::bpropBiases(NVMatrix& v, PASS_TYPE passType) {
 }
 
 void ConvLayer::bpropWeights(NVMatrix& v, int inpIdx, PASS_TYPE passType) {
-    int numCases = v.getNumCols();
-
     NVMatrix& tgt = _partialSum > 0 ? _weightGradTmp : _weights[inpIdx].getGrad();
-//    float scaleWGrad = passType == PASS_GC ? 1 : _weights[inpIdx].getEps() / numCases;
     float scaleWGrad = 1;
     float scaleTargets = _weights[inpIdx].getNumUpdates() > 0 && _partialSum == 0; // ? 1 : 0;
 
@@ -561,14 +538,10 @@ void LocalUnsharedLayer::fpropActs(int inpIdx, float scaleTargets, PASS_TYPE pas
 }
 
 void LocalUnsharedLayer::bpropBiases(NVMatrix& v, PASS_TYPE passType) {
-    int numCases = v.getNumCols();
-//    float scaleBGrad = passType == PASS_GC ? 1 : _biases->getEps() / numCases;
     _biases->getGrad().addSum(v, 1, 0, 1);
 }
 
 void LocalUnsharedLayer::bpropWeights(NVMatrix& v, int inpIdx, PASS_TYPE passType) {
-    int numCases = v.getNumCols();
-    
     float scaleInc = 0;
     float scaleWGrad = 1;
     if (_randSparse->at(inpIdx)) {

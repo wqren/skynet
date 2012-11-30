@@ -103,13 +103,13 @@ void TrainingWorker::run() {
         }
         double done = Now();
 
-	PERIODIC(5, 
-        Log_Info("Processing... batch %d/%d: %.9f fprop, %.9f cost, %.9f bprop, %.9f total",
-                i, _dp->getNumMinibatches(),
-                costStart - fPropStart,
-                bPropStart - costStart,
-                done - bPropStart,
-                done - fPropStart));
+//	PERIODIC(30, 
+//        Log_Info("Processing... batch %d/%d: %.9f fprop, %.9f cost, %.9f bprop, %.9f total",
+//                i, _dp->getNumMinibatches(),
+//                costStart - fPropStart,
+//                bPropStart - costStart,
+//                done - bPropStart,
+//                done - fPropStart));
     }
     cudaThreadSynchronize();
     _convNet->getResultQueue().enqueue(new WorkResult(WorkResult::BATCH_DONE, batchCost));

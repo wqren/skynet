@@ -49,6 +49,7 @@ struct WeightCombiner {
     double learningRate;
     int numGradients;
 
+    double magnitude;
     NVMatrix incTmp;
 
     WeightCombiner(double momentum, double decay, double learningRate);
@@ -64,22 +65,6 @@ struct WeightCombiner {
 
     // Merge an accumulated set of gradients into our weight vector.
     virtual void apply(NVMatrix& weights, NVMatrix& previousIncrement, NVMatrix& grads, int numCases);
-};
-
-class AdagradCombiner: public WeightCombiner {
-private:
-    double _magnitude;
-
-public:
-    AdagradCombiner(double momentum, double decay, double learningRate) :
-        WeightCombiner(momentum, decay, learningRate) {
-        _magnitude = 1;
-    }
-
-
-    void newGradient(Matrix& gradient, Matrix& accumulator);
-    void newGradient(NVMatrix& gradient, NVMatrix& accumulator);
-    void apply(NVMatrix& weights, NVMatrix& previousIncrement, NVMatrix& grads, int numCases);
 };
 
 // Information about incoming/outgoing weight changes for a single layer.

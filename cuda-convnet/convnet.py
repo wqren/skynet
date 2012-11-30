@@ -158,6 +158,8 @@ class ConvNet(IGPUModel):
                 sys.exit(1)
         
     def print_train_results(self):
+        #self.print_weight_summary()
+        #print '=' * 40
         self.print_costs(self.train_outputs[-1])
         
     def print_test_status(self):
@@ -168,6 +170,9 @@ class ConvNet(IGPUModel):
         print "======================Test output======================"
         self.print_costs(self.test_outputs[-1])
         print ""
+        self.print_weight_summary()
+
+    def print_weight_summary(self):
         print "-------------------------------------------------------", 
         for i,l in enumerate(self.layers): # This is kind of hacky but will do for now.
             if 'weights' in l:
@@ -178,6 +183,7 @@ class ConvNet(IGPUModel):
                     print NL.join("Layer '%s' weights[%d]: %e [%e]" % (l['name'], i, n.mean(n.abs(w)), n.mean(n.abs(wi))) for i,(w,wi) in enumerate(zip(l['weights'],l['weightsInc']))),
                 print "%sLayer '%s' biases: %e [%e]" % (NL, l['name'], n.mean(n.abs(l['biases'])), n.mean(n.abs(l['biasesInc']))),
         print ""
+
         
     def conditional_save(self):
         self.save_state()
