@@ -233,9 +233,10 @@ public:
     void randomizeGaussian(float stdev);
     void randomizeGaussian(float mean, float stdev);
     void randomizeGaussian(NVMatrix& stdevs);
-    void randomizeGaussian(NVMatrix& stdevs, NVMatrix& target);
     void binarizeProbs();
     void binarizeProbs(NVMatrix& target);
+
+    void zero();
 
     void biggerThan(NVMatrix& m, NVMatrix& target);
     void biggerThan(NVMatrix& m);

@@ -248,6 +248,10 @@ void NVMatrix::addProduct(const NVMatrix& a, const NVMatrix &b) {
     addProduct(a, b, 1, 1);
 }
 
+void NVMatrix::zero() {
+    apply(NVMatrixOps::Zero(), *this);
+}
+
 template <class Randomizer>
 void NVMatrix::_unaryRandomize(NVMatrix& target, Randomizer rnd) {
     assert(isRndInitialized());

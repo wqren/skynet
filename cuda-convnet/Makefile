@@ -1,4 +1,4 @@
-MODELNAME := _ConvNet
+MODELNAME := _convnet
 
 INCLUDES :=  -I$(PYTHON_INCLUDE_PATH) -I$(NUMPY_INCLUDE_PATH) -I./include -I./include/common -I./include/cudaconv2 -I./include/nvmatrix $(MPI_INCLUDE)
 LIB := -lpthread -L$(ATLAS_LIB_PATH) -L$(CUDA_INSTALL_PATH)/lib64 -lopenblas $(MPI_LINK) 

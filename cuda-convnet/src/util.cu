@@ -25,6 +25,7 @@
  */
 
 #include <util.cuh>
+#include "common/strutil.h"
 
 using namespace std;
 
@@ -71,34 +72,42 @@ MatrixV* getMatrixV(PyObject* pyList) {
     return vec;
 }
 
+PyObject* lookup(PyObject* dict, const char* key) {
+    PyObject* res = PyDict_GetItemString(dict, key);
+    if (res == NULL) {
+        throw StringPrintf("Missing key: %s", key);
+    }
+    return res;
+}
+
 int pyDictGetInt(PyObject* dict, const char* key) {
-    return PyInt_AS_LONG(PyDict_GetItemString(dict, key));
+    return PyInt_AS_LONG(lookup(dict, key));
 }
 
 intv* pyDictGetIntV(PyObject* dict, const char* key) {
-    return getIntV(PyDict_GetItemString(dict, key));
+    return getIntV(lookup(dict, key));
 }
 
 int* pyDictGetIntA(PyObject* dict, const char* key) {
-    return getIntA(PyDict_GetItemString(dict, key));
+    return getIntA(lookup(dict, key));
 }
 
 string pyDictGetString(PyObject* dict, const char* key) {
-    return string(PyString_AS_STRING(PyDict_GetItemString(dict, key)));
+    return string(PyString_AS_STRING(lookup(dict, key)));
 }
 
 float pyDictGetFloat(PyObject* dict, const char* key) {
-    return PyFloat_AS_DOUBLE(PyDict_GetItemString(dict, key));
+    return PyFloat_AS_DOUBLE(lookup(dict, key));
 }
 
 floatv* pyDictGetFloatV(PyObject* dict, const char* key) {
-    return getFloatV(PyDict_GetItemString(dict, key));
+    return getFloatV(lookup(dict, key));
 }
 
 Matrix* pyDictGetMatrix(PyObject* dict, const char* key) {
-    return new Matrix((PyArrayObject*)PyDict_GetItemString(dict, key));
+    return new Matrix((PyArrayObject*)lookup(dict, key));
 }
 
 MatrixV* pyDictGetMatrixV(PyObject* dict, const char* key) {
-    return getMatrixV(PyDict_GetItemString(dict, key));
+    return getMatrixV(lookup(dict, key));
 }

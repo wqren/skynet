@@ -72,8 +72,6 @@ protected:
         assert(!isGradProducer()); // Only do nothing if not grad producer
     }
 public:    
-    static bool _saveActsGrad, _saveActs;
-    
     Layer(ConvNet* convNet, PyObject* paramsDict, bool trans);
     
     virtual void fprop(PASS_TYPE passType);

@@ -41,7 +41,7 @@
 bool Weights::_autoCopyToGPU = false;
 
 WeightCombiner::WeightCombiner(double momentum, double decay, double learningRate) :
-                momentum(momentum), decay(decay), learningRate(learningRate), numGradients(0) {
+                momentum(momentum), decay(decay), learningRate(learningRate), numGradients(0), magnitude(0) {
 }
 
 void WeightCombiner::newGradient(Matrix& gradient, Matrix& accumulator) {
@@ -136,7 +136,7 @@ void Weights::copyToGPU() {
     }
     _onGPU = true;
 
-    Log_Debug("%f %f", _weights->norm2(), _weightsInc->norm2());
+//    Log_Debug("%f %f", _weights->norm2(), _weightsInc->norm2());
 }
 
 void Weights::update(int numCases) {
@@ -146,7 +146,7 @@ void Weights::update(int numCases) {
 
         _netMgr->sendAndRecv(_weightId, *_weightsGrad, *_weightsInc, *_weights, numCases);
         _weightsGrad->scale(0);
-        assert(!isnan(_weightsGrad->norm2()));
+//        assert(!isnan(_weightsGrad->norm2()));
         _numUpdates = 0;
     } else {
       // Log_Info("Skipping update...");

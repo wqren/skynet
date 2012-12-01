@@ -10,7 +10,7 @@ function fail() {
   exit 1
 }
 
-./sysinfo.sh || fail
+./scripts/sysinfo.sh || fail
 source /tmp/convnet-config
 
 echo Found ATLAS: ${ATLAS_LIB_PATH}
@@ -31,7 +31,8 @@ export CUDA_INSTALL_PATH=/home/power/pkg/cuda-4.2
 # CUDA SDK installation directory.
 export CUDA_SDK_PATH=/home/power/pkg/gpusdk
 
-
+swig -I./include -c++ -Wall -python -O -threads -o src/_convnet.cu include/convnet.swig
+mv src/convnet.py .
 
 make $*
 

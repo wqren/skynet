@@ -31,6 +31,7 @@
 #include <stdio.h>
 #include <errno.h>
 #include <assert.h>
+#include <vector>
 
 /*
  * Abstract joinable thread class.
