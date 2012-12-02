@@ -103,6 +103,9 @@ public:
     }
     virtual void copyToGPU()  {
     }
+    virtual void initialize(ConvNet*, PyObject*) {
+
+    }
 };
 
 class NeuronLayer : public Layer {
@@ -130,6 +133,7 @@ public:
     virtual void updateWeights();
     virtual void copyToCPU();
     virtual void copyToGPU();
+    virtual void initialize(ConvNet*, PyObject*);
     void checkGradients(ConvNet*);
     Weights& getWeights(int idx);
 };

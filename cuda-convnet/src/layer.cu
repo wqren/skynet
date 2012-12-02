@@ -263,7 +263,9 @@ void NeuronLayer::fpropActs(int inpIdx, float scaleTargets, PASS_TYPE passType) 
  */
 WeightLayer::WeightLayer(PyObject* paramsDict, bool trans) :
     Layer(paramsDict, trans) {
-    
+}
+
+void WeightLayer::initialize(ConvNet* convNet, PyObject* paramsDict) {
     MatrixV& hWeights = *pyDictGetMatrixV(paramsDict, "weights");
     MatrixV& hWeightsInc = *pyDictGetMatrixV(paramsDict, "weightsInc");
     Matrix& hBiases = *pyDictGetMatrix(paramsDict, "biases");

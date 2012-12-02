@@ -436,6 +436,7 @@ Layer.updateWeights = new_instancemethod(_convnet.Layer_updateWeights,None,Layer
 Layer.checkGradients = new_instancemethod(_convnet.Layer_checkGradients,None,Layer)
 Layer.copyToCPU = new_instancemethod(_convnet.Layer_copyToCPU,None,Layer)
 Layer.copyToGPU = new_instancemethod(_convnet.Layer_copyToGPU,None,Layer)
+Layer.initialize = new_instancemethod(_convnet.Layer_initialize,None,Layer)
 Layer_swigregister = _convnet.Layer_swigregister
 Layer_swigregister(Layer)
 

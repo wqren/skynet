@@ -88,48 +88,50 @@ ConvNet::ConvNet(PyListObject* layerParams, int minibatchSize, int deviceID) : T
  */
 Layer* ConvNet::initLayer(string& layerType, PyObject* paramsDict) {
     if (layerType == "fc") {
-        _layers.push_back(new FCLayer(this, paramsDict));
+        _layers.push_back(new FCLayer(paramsDict));
     } else if (layerType == "conv") {
-        _layers.push_back(new ConvLayer(this, paramsDict));
+        _layers.push_back(new ConvLayer(paramsDict));
     } else if (layerType == "local") {
-        _layers.push_back(new LocalUnsharedLayer(this, paramsDict));
+        _layers.push_back(new LocalUnsharedLayer(paramsDict));
     } else if (layerType == "pool") {
-        _layers.push_back(&PoolLayer::makePoolLayer(this, paramsDict));
+        _layers.push_back(&PoolLayer::makePoolLayer(paramsDict));
     } else if (layerType == "rnorm") {
-        _layers.push_back(new ResponseNormLayer(this, paramsDict));
+        _layers.push_back(new ResponseNormLayer(paramsDict));
     } else if (layerType == "cmrnorm") {
-        _layers.push_back(new CrossMapResponseNormLayer(this, paramsDict));
+        _layers.push_back(new CrossMapResponseNormLayer(paramsDict));
     } else if (layerType == "cnorm") {
-        _layers.push_back(new ContrastNormLayer(this, paramsDict));
+        _layers.push_back(new ContrastNormLayer(paramsDict));
     } else if (layerType == "softmax") {
-        _layers.push_back(new SoftmaxLayer(this, paramsDict));
+        _layers.push_back(new SoftmaxLayer(paramsDict));
     } else if (layerType == "eltsum") {
-        _layers.push_back(new EltwiseSumLayer(this, paramsDict));
+        _layers.push_back(new EltwiseSumLayer(paramsDict));
     } else if (layerType == "eltmax") {
-        _layers.push_back(new EltwiseMaxLayer(this, paramsDict));
+        _layers.push_back(new EltwiseMaxLayer(paramsDict));
     } else if (layerType == "neuron") {
-        _layers.push_back(new NeuronLayer(this, paramsDict));
+        _layers.push_back(new NeuronLayer(paramsDict));
     } else if (layerType == "nailbed") {
-        _layers.push_back(new NailbedLayer(this, paramsDict));
+        _layers.push_back(new NailbedLayer(paramsDict));
     } else if (layerType == "blur") {
-        _layers.push_back(new GaussianBlurLayer(this, paramsDict));
+        _layers.push_back(new GaussianBlurLayer(paramsDict));
     } else if (layerType == "resize") {
-        _layers.push_back(new ResizeLayer(this, paramsDict));
+        _layers.push_back(new ResizeLayer(paramsDict));
     } else if (layerType == "rgb2yuv") {
-        _layers.push_back(new RGBToYUVLayer(this, paramsDict));
+        _layers.push_back(new RGBToYUVLayer(paramsDict));
     } else if (layerType == "rgb2lab") {
-        _layers.push_back(new RGBToLABLayer(this, paramsDict));
+        _layers.push_back(new RGBToLABLayer(paramsDict));
     } else if (layerType == "data") {
-        DataLayer *d = new DataLayer(this, paramsDict);
+        DataLayer *d = new DataLayer(paramsDict);
         _layers.push_back(d);
         _dataLayers.push_back(d);
     } else if (strncmp(layerType.c_str(), "cost.", 5) == 0) {
-        CostLayer *c = &CostLayer::makeCostLayer(this, layerType, paramsDict);
+        CostLayer *c = &CostLayer::makeCostLayer(layerType, paramsDict);
         _layers.push_back(c);
         _costs.push_back(c);
     } else {
         throw string("Unknown layer type ") + layerType;
     }
+
+    _layers.back()->initialize(this, paramsDict);
 
     return _layers.back();
 }
@@ -268,7 +270,7 @@ void ConvNet::checkGradients() {
     bprop(PASS_GC);
     
     for (vector<Layer*>::iterator it = _layers.begin(); it != _layers.end(); ++it) {
-        (*it)->checkGradients();
+        (*it)->checkGradients(this);
     }
     
     cout << "------------------------" << endl;

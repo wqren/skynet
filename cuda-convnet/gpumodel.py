@@ -93,9 +93,7 @@ class IGPUModel:
         self.init_model_lib()
         
     def import_model(self):
-        print "========================="
-        print "Importing %s C++ module" % ('_' + self.model_name)
-        self.libmodel = __import__('_' + self.model_name) 
+        raise NotImplementedException
                    
     def fill_excused_options(self):
         pass
@@ -111,7 +109,7 @@ class IGPUModel:
         except DataProviderException, e:
             print "Unable to create data provider: %s" % e
             self.print_data_providers()
-            sys.exit()
+            sys.exit(1)
         
     def init_model_state(self):
         pass
@@ -123,7 +121,7 @@ class IGPUModel:
         if self.test_only:
             self.test_outputs += [self.get_test_error()]
             self.print_test_results()
-            sys.exit(0)
+            sys.exit(1)
         self.train()
     
     def train(self):
@@ -331,5 +329,5 @@ class IGPUModel:
         except UnpickleError, e:
             print "Error loading checkpoint:"
             print e
-        sys.exit()
+        sys.exit(1)
         
