@@ -94,8 +94,8 @@ class ImageNetDataProvider(LabeledDataProvider):
         images = n.require(images, dtype=n.single, requirements='C')
         
         labels = n.array(datadic['labels'])
-	print images.shape
-	print labels.shape
+	#print images.shape
+	#print labels.shape
 
 	labels = labels.reshape((1, images.shape[1]))
         labels = n.require(labels, dtype=n.single, requirements='C')

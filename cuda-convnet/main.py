@@ -159,13 +159,18 @@ class ConvNetRunner(object):
         self.cleanup()
     
     def print_model_state(self):
-      pass
+        pass
     
     def cleanup(self):
         sys.exit(0)
     
     def sync_with_host(self):
-        self.libmodel.syncWithHost()
+        worker = convnet.SyncWorker(self.model)
+        worker.thisown = 0
+        self.model.getWorkerQueue().enqueue(worker)
+        res = self.model.getResultQueue().dequeue()
+        assert res.getResultType() == convnet.WorkResult.SYNC_DONE
+
             
     def get_num_batches_done(self):
         return len(self.train_batch_range) * (self.epoch - 1) + self.batchnum - self.train_batch_range[0] + 1
@@ -287,8 +292,9 @@ class ConvNetRunner(object):
         print 'Resetting model parameters for %d peers.' % num_peers
         rate_adjustment = num_peers / 32.
         for l in self.layers:
-          if 'epsW' in l: l['epsW'] = [rate_adjustment * num_peers for w in l['epsW']]
-          if 'epsB' in l: l['epsB'] = rate_adjustment * num_peers
+          pass
+          #if 'epsW' in l: l['epsW'] = [rate_adjustment * num_peers for w in l['epsW']]
+          #if 'epsB' in l: l['epsB'] = rate_adjustment * num_peers
           #if 'momW' in l: l['momW'] = [w / num_peers for w in l['momW']]
           #if 'momB' in l: l['momB'] = w / num_peers
 
@@ -368,12 +374,14 @@ class ConvNetRunner(object):
 
         if self.check_grads:
             worker = convnet.GradCheckWorker(self.model, cpudata)
+            worker.thisown = 0
             self.model.getWorkerQueue().enqueue(worker)
             res = self.model.getResultQueue().dequeue()
             assert res.getResultType() == convnet.WorkResult.BATCH_DONE
         elif not train and self.multiview_test:
             worker = convnet.MultiviewTestWorker(self.model, cpudata,
                                                  self.tran_data_provider.num_views, self.logreg_idx)
+            worker.thisown = 0
             self.model.getWorkerQueue().enqueue(worker)
         else:
             worker = convnet.TrainingWorker(self.model, cpudata, not train)
