@@ -1040,5 +1040,78 @@ class FeatureWorker(DataWorker):
 FeatureWorker_swigregister = _convnet.FeatureWorker_swigregister
 FeatureWorker_swigregister(FeatureWorker)
 
+class SwigPyIterator(object):
+    thisown = _swig_property(lambda x: x.this.own(), lambda x, v: x.this.own(v), doc='The membership flag')
+    def __init__(self, *args, **kwargs): raise AttributeError("No constructor defined - class is abstract")
+    __repr__ = _swig_repr
+    __swig_destroy__ = _convnet.delete_SwigPyIterator
+    def __iter__(self): return self
+SwigPyIterator.value = new_instancemethod(_convnet.SwigPyIterator_value,None,SwigPyIterator)
+SwigPyIterator.incr = new_instancemethod(_convnet.SwigPyIterator_incr,None,SwigPyIterator)
+SwigPyIterator.decr = new_instancemethod(_convnet.SwigPyIterator_decr,None,SwigPyIterator)
+SwigPyIterator.distance = new_instancemethod(_convnet.SwigPyIterator_distance,None,SwigPyIterator)
+SwigPyIterator.equal = new_instancemethod(_convnet.SwigPyIterator_equal,None,SwigPyIterator)
+SwigPyIterator.copy = new_instancemethod(_convnet.SwigPyIterator_copy,None,SwigPyIterator)
+SwigPyIterator.next = new_instancemethod(_convnet.SwigPyIterator_next,None,SwigPyIterator)
+SwigPyIterator.__next__ = new_instancemethod(_convnet.SwigPyIterator___next__,None,SwigPyIterator)
+SwigPyIterator.previous = new_instancemethod(_convnet.SwigPyIterator_previous,None,SwigPyIterator)
+SwigPyIterator.advance = new_instancemethod(_convnet.SwigPyIterator_advance,None,SwigPyIterator)
+SwigPyIterator.__eq__ = new_instancemethod(_convnet.SwigPyIterator___eq__,None,SwigPyIterator)
+SwigPyIterator.__ne__ = new_instancemethod(_convnet.SwigPyIterator___ne__,None,SwigPyIterator)
+SwigPyIterator.__iadd__ = new_instancemethod(_convnet.SwigPyIterator___iadd__,None,SwigPyIterator)
+SwigPyIterator.__isub__ = new_instancemethod(_convnet.SwigPyIterator___isub__,None,SwigPyIterator)
+SwigPyIterator.__add__ = new_instancemethod(_convnet.SwigPyIterator___add__,None,SwigPyIterator)
+SwigPyIterator.__sub__ = new_instancemethod(_convnet.SwigPyIterator___sub__,None,SwigPyIterator)
+SwigPyIterator_swigregister = _convnet.SwigPyIterator_swigregister
+SwigPyIterator_swigregister(SwigPyIterator)
+
+class GPUData(object):
+    thisown = _swig_property(lambda x: x.this.own(), lambda x, v: x.this.own(v), doc='The membership flag')
+    __repr__ = _swig_repr
+    def __init__(self, *args): 
+        _convnet.GPUData_swiginit(self,_convnet.new_GPUData(*args))
+    __swig_destroy__ = _convnet.delete_GPUData
+GPUData.getSize = new_instancemethod(_convnet.GPUData_getSize,None,GPUData)
+GPUData.getData = new_instancemethod(_convnet.GPUData_getData,None,GPUData)
+GPUData.getNumCases = new_instancemethod(_convnet.GPUData_getNumCases,None,GPUData)
+GPUData_swigregister = _convnet.GPUData_swigregister
+GPUData_swigregister(GPUData)
+
+class CPUData(object):
+    thisown = _swig_property(lambda x: x.this.own(), lambda x, v: x.this.own(v), doc='The membership flag')
+    __repr__ = _swig_repr
+    def __init__(self, *args): 
+        _convnet.CPUData_swiginit(self,_convnet.new_CPUData(*args))
+    __swig_destroy__ = _convnet.delete_CPUData
+CPUData.getSize = new_instancemethod(_convnet.CPUData_getSize,None,CPUData)
+CPUData.getData = new_instancemethod(_convnet.CPUData_getData,None,CPUData)
+CPUData.getNumCases = new_instancemethod(_convnet.CPUData_getNumCases,None,CPUData)
+CPUData_swigregister = _convnet.CPUData_swigregister
+CPUData_swigregister(CPUData)
+
+class WorkerQueue(object):
+    thisown = _swig_property(lambda x: x.this.own(), lambda x, v: x.this.own(v), doc='The membership flag')
+    __repr__ = _swig_repr
+    def __init__(self, *args): 
+        _convnet.WorkerQueue_swiginit(self,_convnet.new_WorkerQueue(*args))
+    __swig_destroy__ = _convnet.delete_WorkerQueue
+WorkerQueue.enqueue = new_instancemethod(_convnet.WorkerQueue_enqueue,None,WorkerQueue)
+WorkerQueue.dequeue = new_instancemethod(_convnet.WorkerQueue_dequeue,None,WorkerQueue)
+WorkerQueue.getNumElements = new_instancemethod(_convnet.WorkerQueue_getNumElements,None,WorkerQueue)
+WorkerQueue_swigregister = _convnet.WorkerQueue_swigregister
+WorkerQueue_swigregister(WorkerQueue)
+
+class ResultQueue(object):
+    thisown = _swig_property(lambda x: x.this.own(), lambda x, v: x.this.own(v), doc='The membership flag')
+    __repr__ = _swig_repr
+    def __init__(self, *args): 
+        _convnet.ResultQueue_swiginit(self,_convnet.new_ResultQueue(*args))
+    __swig_destroy__ = _convnet.delete_ResultQueue
+ResultQueue.enqueue = new_instancemethod(_convnet.ResultQueue_enqueue,None,ResultQueue)
+ResultQueue.dequeue = new_instancemethod(_convnet.ResultQueue_dequeue,None,ResultQueue)
+ResultQueue.getNumElements = new_instancemethod(_convnet.ResultQueue_getNumElements,None,ResultQueue)
+ResultQueue_swigregister = _convnet.ResultQueue_swigregister
+ResultQueue_swigregister(ResultQueue)
+
 
 

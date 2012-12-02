@@ -31,7 +31,7 @@ import os
 from gpumodel import IGPUModel
 import random as r
 import numpy.random as nr
-from convnet import ConvNet
+from convnet import ConvNetRunner
 from options import *
 
 try:
@@ -43,30 +43,30 @@ except:
 class ShowNetError(Exception):
     pass
 
-class ShowConvNet(ConvNet):
+class ShowConvNet(ConvNetRunner):
     def __init__(self, op, load_dic):
-        ConvNet.__init__(self, op, load_dic)
+        ConvNetRunner.__init__(self, op, load_dic)
     
     def get_gpus(self):
         self.need_gpu = self.op.get_value('show_preds') or self.op.get_value('write_features')
         if self.need_gpu:
-            ConvNet.get_gpus(self)
+            ConvNetRunner.get_gpus(self)
     
     def init_data_providers(self):
         class Dummy:
             def advance_batch(self):
                 pass
         if self.need_gpu:
-            ConvNet.init_data_providers(self)
+            ConvNetRunner.init_data_providers(self)
         else:
             self.train_data_provider = self.test_data_provider = Dummy()
     
     def import_model(self):
         if self.need_gpu:
-            ConvNet.import_model(self)
+            ConvNetRunner.import_model(self)
             
     def init_model_state(self):
-        #ConvNet.init_model_state(self)
+        #ConvNetRunner.init_model_state(self)
         if self.op.get_value('show_preds'):
             self.sotmax_idx = self.get_layer_idx(self.op.get_value('show_preds'), check_type='softmax')
         if self.op.get_value('write_features'):
@@ -74,7 +74,7 @@ class ShowConvNet(ConvNet):
             
     def init_model_lib(self):
         if self.need_gpu:
-            ConvNet.init_model_lib(self)
+            ConvNetRunner.init_model_lib(self)
 
     def plot_cost(self):
         if self.show_cost not in self.train_outputs[0][0]:
@@ -271,7 +271,7 @@ class ShowConvNet(ConvNet):
             
     @classmethod
     def get_options_parser(cls):
-        op = ConvNet.get_options_parser()
+        op = ConvNetRunner.get_options_parser()
         for option in list(op.options):
             if option not in ('gpu', 'load_file', 'train_batch_range', 'test_batch_range'):
                 op.delete_option(option)

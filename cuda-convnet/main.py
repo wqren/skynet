@@ -22,45 +22,278 @@
 # NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
 # EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+from convdata import *
+from data import *
+from gpumodel import *
+from mpi4py import MPI
+from options import *
+from os import linesep as NL
+from time import time, asctime, strftime, localtime
+from util import *
+
+import convnet
+import ctypes
+import layer as lay
+import math as m
 import numpy as n
 import numpy.random as nr
-from util import *
-from data import *
-from options import *
-from gpumodel import *
 import sys
-import math as m
-import layer as lay
-from convdata import *
-from os import linesep as NL
+
+
+
 #import pylab as pl
 
-import ctypes
 MPILIB = ctypes.CDLL('libmpi.so', ctypes.RTLD_GLOBAL)
 PALLIB = ctypes.CDLL('libopen-pal.so', ctypes.RTLD_GLOBAL)
-from mpi4py import MPI
 
 
-class ConvNet(IGPUModel):
+class ConvNetRunner(object):
     def __init__(self, op, load_dic, dp_params={}):
         filename_options = []
         dp_params['multiview_test'] = op.get_value('multiview_test')
         dp_params['crop_border'] = op.get_value('crop_border')
-        IGPUModel.__init__(self, "ConvNet", op, load_dic, filename_options, dp_params=dp_params)
 
-    def import_model(self):
-        self.libmodel = __import__(lib_name) 
+        # these are input parameters
+        self.model_name = 'ConvNet'
+        self.op = op
+        self.options = op.options
+        self.load_dic = load_dic
+        self.filename_options = filename_options
+        self.dp_params = dp_params
+        self.get_gpus()
+        self.fill_excused_options()
+
+        #assert self.op.all_values_given()
         
+        for o in op.get_options_list():
+            setattr(self, o.name, o.value)
+        
+        n.random.shuffle(self.train_batch_range)
+
+        # these are things that the model must remember but they're not input parameters
+        if load_dic:
+            self.model_state = load_dic["model_state"]
+            self.save_file = self.options["load_file"].value
+            if not os.path.isdir(self.save_file):
+                self.save_file = os.path.dirname(self.save_file)
+        else:
+            self.model_state = {}
+            if filename_options is not None:
+                self.save_file = 'ConvNet' + "_" + '_'.join(['%s_%s' % (char, self.options[opt].get_str_value()) for opt, char in filename_options]) + '_' + strftime('%Y-%m-%d_%H.%M.%S')
+            self.model_state["train_outputs"] = []
+            self.model_state["test_outputs"] = []
+            self.model_state["epoch"] = 1
+            self.model_state["batchnum"] = self.train_batch_range[0]
+
+        self.init_data_providers()
+        if load_dic: 
+            self.train_data_provider.advance_batch()
+            
+        # model state often requries knowledge of data provider, so it's initialized after
+        try:
+            self.init_model_state()
+        except ModelStateException, e:
+            print e
+            sys.exit(1)
+        
+        for var, val in self.model_state.iteritems():
+            setattr(self, var, val)
+            
+        self.init_model_lib()
+
+    def init_data_providers(self):
+        self.dp_params['convnet'] = self
+        try:
+            self.test_data_provider = DataProvider.get_instance(self.data_path, self.test_batch_range,
+                                                                type=self.dp_type, dp_params=self.dp_params, test=True)
+            self.train_data_provider = DataProvider.get_instance(self.data_path, self.train_batch_range,
+                                                                     self.model_state["epoch"], self.model_state["batchnum"],
+                                                                     type=self.dp_type, dp_params=self.dp_params, test=False)
+        except DataProviderException, e:
+            print "Unable to create data provider: %s" % e
+            self.print_data_providers()
+            sys.exit(1)
+
+    def start(self):
+        if self.test_only:
+            self.test_outputs += [self.get_test_error()]
+            self.print_test_results()
+            sys.exit(1)
+        self.train()
+    
+    def train(self):
+        print "========================="
+        print "Training %s" % self.model_name
+        self.op.print_values()
+        print "========================="
+        self.print_model_state()
+        print "Running on CUDA device(s) %s" % ", ".join("%d" % d for d in self.device_ids)
+        print "Current time: %s" % asctime(localtime())
+        print "Saving checkpoints to %s" % os.path.join(self.save_path, self.save_file)
+        print "========================="
+        next_data = self.get_next_batch()
+        while self.epoch <= self.num_epochs:
+            data = next_data
+            self.epoch, self.batchnum = data[0], data[1]
+            self.print_iteration()
+            sys.stdout.flush()
+            
+            compute_time_py = time()
+            self.start_batch(data)
+            
+            # load the next batch while the current one is computing
+            next_data = self.get_next_batch()
+            
+            batch_output = self.finish_batch()
+            self.train_outputs += [batch_output]
+            self.print_train_results()
+
+            if self.get_num_batches_done() % self.testing_freq == 0:
+                self.sync_with_host()
+                self.test_outputs += [self.get_test_error()]
+                self.print_test_results()
+                self.print_test_status()
+                self.conditional_save()
+            
+            self.print_train_time(time() - compute_time_py)
+        self.cleanup()
+    
+    def print_model_state(self):
+      pass
+    
+    def cleanup(self):
+        sys.exit(0)
+    
+    def sync_with_host(self):
+        self.libmodel.syncWithHost()
+            
+    def get_num_batches_done(self):
+        return len(self.train_batch_range) * (self.epoch - 1) + self.batchnum - self.train_batch_range[0] + 1
+    
+    def get_next_batch(self, train=True):
+        dp = self.train_data_provider
+        if not train:
+            dp = self.test_data_provider
+
+        batch = dp.get_next_batch()
+        return self.parse_batch_data(batch, train=train)
+    
+    def finish_batch(self):
+        result = self.model.getResultQueue().dequeue()
+        cost = result.getResults()
+        return cost.getCostMap(), cost.getNumCases()
+    
+    def conditional_save(self):
+        batch_error = self.test_outputs[-1][0]
+        if batch_error > 0 and batch_error < self.max_test_err:
+            self.save_state()
+        else:
+            print "\tTest error > %g, not saving." % self.max_test_err,
+    
+    def aggregate_test_outputs(self, test_outputs):
+        test_error = tuple([sum(t[r] for t in test_outputs) / (1 if self.test_one else len(self.test_batch_range)) for r in range(len(test_outputs[-1]))])
+        return test_error
+    
+    def get_test_error(self):
+        next_data = self.get_next_batch(train=False)
+        test_outputs = []
+        while True:
+            data = next_data
+            self.start_batch(data, train=False)
+            load_next = not self.test_one and data[1] < self.test_batch_range[-1]
+            if load_next: # load next batch
+                next_data = self.get_next_batch(train=False)
+            test_outputs += [self.finish_batch()]
+            if self.test_only: # Print the individual batch results for safety
+                print "batch %d: %s" % (data[1], str(test_outputs[-1]))
+            if not load_next:
+                break
+            sys.stdout.flush()
+            
+        return self.aggregate_test_outputs(test_outputs)
+    
+    def set_var(self, var_name, var_val):
+        setattr(self, var_name, var_val)
+        self.model_state[var_name] = var_val
+        return var_val
+        
+    def get_var(self, var_name):
+        return self.model_state[var_name]
+        
+    def has_var(self, var_name):
+        return var_name in self.model_state
+        
+    def save_state(self):
+        for att in self.model_state:
+            if hasattr(self, att):
+                self.model_state[att] = getattr(self, att)
+        
+        dic = {"model_state": self.model_state,
+               "op": self.op}
+            
+        checkpoint_dir = os.path.join(self.save_path, self.save_file)
+        checkpoint_file = "%d.%d" % (self.epoch, self.batchnum)
+        checkpoint_file_full_path = os.path.join(checkpoint_dir, checkpoint_file)
+        if not os.path.exists(checkpoint_dir):
+            os.makedirs(checkpoint_dir)
+    
+        pickle(checkpoint_file_full_path, dic,compress=self.zip_save)
+        
+        for f in sorted(os.listdir(checkpoint_dir), key=alphanum_key):
+            if sum(os.path.getsize(os.path.join(checkpoint_dir, f2)) for f2 in os.listdir(checkpoint_dir)) > self.max_filesize_mb*1024*1024 and f != checkpoint_file:
+                os.remove(os.path.join(checkpoint_dir, f))
+            else:
+                break
+            
+    @staticmethod
+    def load_checkpoint(load_dir):
+        if os.path.isdir(load_dir):
+            return unpickle(os.path.join(load_dir, sorted(os.listdir(load_dir), key=alphanum_key)[-1]))
+        return unpickle(load_dir)
+
+    @staticmethod
+    def print_data_providers():
+        print "Available data providers:"
+        for dp, desc in dp_types.iteritems():
+            print "    %s: %s" % (dp, desc)
+            
+    @staticmethod
+    def parse_options(op):
+        try:
+            load_dic = None
+            options = op.parse()
+            if options["load_file"].value_given:
+                load_dic = IGPUModel.load_checkpoint(options["load_file"].value)
+                old_op = load_dic["op"]
+                old_op.merge_from(op)
+                op = old_op
+            op.eval_expr_defaults()
+            return op, load_dic
+        except OptionMissingException, e:
+            print e
+            op.print_usage()
+        except OptionException, e:
+            print e
+        except UnpickleError, e:
+            print "Error loading checkpoint:"
+            print e
+        sys.exit(1)
+
     def init_model_lib(self):
         num_peers = MPI.COMM_WORLD.Get_size()
+        
+        # Adjust our learning rate based on the number of other workers - more workers -> larger
+        # batch size -> higher learning rate.
         print 'Resetting model parameters for %d peers.' % num_peers
+        rate_adjustment = num_peers / 32.
         for l in self.layers:
-          if 'epsW' in l: l['epsW'] = [w / num_peers for w in l['epsW']]
-          if 'epsB' in l: l['epsB'] = w / num_peers
+          if 'epsW' in l: l['epsW'] = [rate_adjustment * num_peers for w in l['epsW']]
+          if 'epsB' in l: l['epsB'] = rate_adjustment * num_peers
           #if 'momW' in l: l['momW'] = [w / num_peers for w in l['momW']]
           #if 'momB' in l: l['momB'] = w / num_peers
 
-        self.libmodel.initModel(self.layers, self.minibatch_size, self.device_ids[0])
+        self.model = convnet.ConvNet(self.layers, self.minibatch_size, self.device_ids[0])
+        self.model.start()
         
     def init_model_state(self):
         ms = self.model_state
@@ -116,7 +349,6 @@ class ConvNet(IGPUModel):
             
     # Make sure the data provider returned data in proper format
     def parse_batch_data(self, batch_data, train=True):
-	IGPUModel.parse_batch_data(self, batch_data, train)
         if max(d.dtype != n.single for d in batch_data[2]):
             raise DataProviderException("All matrices returned by data provider must consist of single-precision floats.")
         return batch_data
@@ -131,12 +363,22 @@ class ConvNet(IGPUModel):
 
     def start_batch(self, batch_data, train=True):
         data = batch_data[2]
+        cpudata = convnet.CPUData(data)
+        cpudata.thisown = 0
+
         if self.check_grads:
-            self.libmodel.checkGradients(data)
+            worker = convnet.GradCheckWorker(self.model, cpudata)
+            self.model.getWorkerQueue().enqueue(worker)
+            res = self.model.getResultQueue().dequeue()
+            assert res.getResultType() == convnet.WorkResult.BATCH_DONE
         elif not train and self.multiview_test:
-            self.libmodel.startMultiviewTest(data, self.train_data_provider.num_views, self.logreg_idx)
+            worker = convnet.MultiviewTestWorker(self.model, cpudata,
+                                                 self.tran_data_provider.num_views, self.logreg_idx)
+            self.model.getWorkerQueue().enqueue(worker)
         else:
-            self.libmodel.startBatch(data, not train)
+            worker = convnet.TrainingWorker(self.model, cpudata, not train)
+            worker.thisown = 0
+            self.model.getWorkerQueue().enqueue(worker)
         
     def print_iteration(self):
         print "%d.%d..." % (self.epoch, self.batchnum),
@@ -198,7 +440,22 @@ class ConvNet(IGPUModel):
     
     @classmethod
     def get_options_parser(cls):
-        op = IGPUModel.get_options_parser()
+        op = OptionsParser()
+        op.add_option("f", "load_file", StringOptionParser, "Load file", default="", excuses=OptionsParser.EXCLUDE_ALL)
+        op.add_option("train-range", "train_batch_range", RangeOptionParser, "Data batch range: training")
+        op.add_option("test-range", "test_batch_range", RangeOptionParser, "Data batch range: testing")
+        op.add_option("data-provider", "dp_type", StringOptionParser, "Data provider", default="default")
+        op.add_option("test-freq", "testing_freq", IntegerOptionParser, "Testing frequency", default=25)
+        op.add_option("epochs", "num_epochs", IntegerOptionParser, "Number of epochs", default=500)
+        op.add_option("data-path", "data_path", StringOptionParser, "Data path")
+        op.add_option("save-path", "save_path", StringOptionParser, "Save path")
+        op.add_option("max-filesize", "max_filesize_mb", IntegerOptionParser, "Maximum save file size (MB)", default=5000)
+        op.add_option("max-test-err", "max_test_err", FloatOptionParser, "Maximum test error for saving")
+        op.add_option("num-gpus", "num_gpus", IntegerOptionParser, "Number of GPUs", default=1)
+        op.add_option("test-only", "test_only", BooleanOptionParser, "Test and quit?", default=0)
+        op.add_option("zip-save", "zip_save", BooleanOptionParser, "Compress checkpoints?", default=0)
+        op.add_option("test-one", "test_one", BooleanOptionParser, "Test on one batch at a time?", default=1)
+        op.add_option("gpu", "gpu", ListOptionParser(IntegerOptionParser), "GPU override", default=OptionExpression("[-1] * num_gpus"))
         op.add_option("mini", "minibatch_size", IntegerOptionParser, "Minibatch size", default=128)
         op.add_option("layer-def", "layer_def", StringOptionParser, "Layer definition file", set_once=True)
         op.add_option("layer-params", "layer_params", StringOptionParser, "Layer parameter file")
@@ -225,8 +482,13 @@ class ConvNet(IGPUModel):
     
 if __name__ == "__main__":
     #nr.seed(5)
-    op = ConvNet.get_options_parser()
+    op = ConvNetRunner.get_options_parser()
 
-    op, load_dic = IGPUModel.parse_options(op)
-    model = ConvNet(op, load_dic)
+    op, load_dic = ConvNetRunner.parse_options(op)
+    model = ConvNetRunner(op, load_dic)
     model.start()
+
+
+class ModelStateException(Exception):
+    pass
+

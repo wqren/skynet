@@ -25,6 +25,8 @@
  */
 
 #include <util.cuh>
+#include <string>
+#include <vector>
 #include "common/strutil.h"
 
 using namespace std;
@@ -33,7 +35,7 @@ floatv* getFloatV(PyObject* pyList) {
     if (pyList == NULL) {
         return NULL;
     }
-    floatv* vec = new floatv(); 
+    floatv* vec = new floatv();
     for (int i = 0; i < PyList_GET_SIZE(pyList); i++) {
         vec->push_back(PyFloat_AS_DOUBLE(PyList_GET_ITEM(pyList, i)));
     }
@@ -44,7 +46,7 @@ intv* getIntV(PyObject* pyList) {
     if (pyList == NULL) {
         return NULL;
     }
-    intv* vec = new intv(); 
+    intv* vec = new intv();
     for (int i = 0; i < PyList_GET_SIZE(pyList); i++) {
         vec->push_back(PyInt_AS_LONG(PyList_GET_ITEM(pyList, i)));
     }
@@ -65,9 +67,9 @@ MatrixV* getMatrixV(PyObject* pyList) {
     if (pyList == NULL) {
         return NULL;
     }
-    MatrixV* vec = new MatrixV(); 
+    MatrixV* vec = new MatrixV();
     for (int i = 0; i < PyList_GET_SIZE(pyList); i++) {
-        vec->push_back(new Matrix((PyArrayObject*)PyList_GET_ITEM(pyList, i)));
+        vec->push_back(new Matrix((PyArrayObject*) PyList_GET_ITEM(pyList, i)));
     }
     return vec;
 }
@@ -85,11 +87,11 @@ int pyDictGetInt(PyObject* dict, const char* key) {
 }
 
 intv* pyDictGetIntV(PyObject* dict, const char* key) {
-    return getIntV(lookup(dict, key));
+    return getIntV( PyDict_GetItemString(dict, key));
 }
 
 int* pyDictGetIntA(PyObject* dict, const char* key) {
-    return getIntA(lookup(dict, key));
+    return getIntA(PyDict_GetItemString(dict, key));
 }
 
 string pyDictGetString(PyObject* dict, const char* key) {
@@ -101,13 +103,13 @@ float pyDictGetFloat(PyObject* dict, const char* key) {
 }
 
 floatv* pyDictGetFloatV(PyObject* dict, const char* key) {
-    return getFloatV(lookup(dict, key));
+    return getFloatV(PyDict_GetItemString(dict, key));
 }
 
 Matrix* pyDictGetMatrix(PyObject* dict, const char* key) {
-    return new Matrix((PyArrayObject*)lookup(dict, key));
+    return new Matrix((PyArrayObject*) lookup(dict, key));
 }
 
 MatrixV* pyDictGetMatrixV(PyObject* dict, const char* key) {
-    return getMatrixV(lookup(dict, key));
+    return getMatrixV(PyDict_GetItemString(dict, key));
 }
