@@ -23,29 +23,22 @@
 # EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 from convdata import *
-from data import *
-from gpumodel import *
-from mpi4py import MPI
+from gpumodel import * 
 from options import *
 from os import linesep as NL
 from time import time, asctime, strftime, localtime
-from util import *
-
 import convnet
 import ctypes
 import layer as lay
 import math as m
 import numpy as n
-import numpy.random as nr
 import sys
 
-
-
 #import pylab as pl
-
 MPILIB = ctypes.CDLL('libmpi.so', ctypes.RTLD_GLOBAL)
 PALLIB = ctypes.CDLL('libopen-pal.so', ctypes.RTLD_GLOBAL)
-
+from mpi4py import MPI
+WORLD = MPI.COMM_WORLD
 
 class ConvNetRunner(object):
     def __init__(self, op, load_dic, dp_params={}):
@@ -144,8 +137,9 @@ class ConvNetRunner(object):
             # load the next batch while the current one is computing
             next_data = self.get_next_batch()
             
-            batch_output = self.finish_batch()
-            self.train_outputs += [batch_output]
+            costmap, num_cases = self.finish_batch()
+            self.exchange_weights(costmap['logprob'][1])
+            self.train_outputs += [(costmap, num_cases)]
             self.print_train_results()
 
             if self.get_num_batches_done() % self.testing_freq == 0:
@@ -187,18 +181,23 @@ class ConvNetRunner(object):
         result = self.model.getResultQueue().dequeue()
         cost = result.getResults()
         return cost.getCostMap(), cost.getNumCases()
-    
-    def conditional_save(self):
-        batch_error = self.test_outputs[-1][0]
-        if batch_error > 0 and batch_error < self.max_test_err:
-            self.save_state()
-        else:
-            print "\tTest error > %g, not saving." % self.max_test_err,
-    
-    def aggregate_test_outputs(self, test_outputs):
-        test_error = tuple([sum(t[r] for t in test_outputs) / (1 if self.test_one else len(self.test_batch_range)) for r in range(len(test_outputs[-1]))])
-        return test_error
-    
+      
+    def exchange_weights(self, mycost):
+        # Wait for all of our peers to catch up
+        WORLD.Barrier()
+        peer_costs = WORLD.alltoall(mycost)
+        print >>sys.stderr, 'Peer costs:', peer_costs
+        best_peer, best_cost = sorted(enumerate(peer_costs), key=lambda t: t[1])[1]
+        
+        # if i'm the best peer, share my weights with everyone else
+        new_state = WORLD.bcast(self.model_state['layers'], rank=best_peer)
+        for me, peer in zip(self.model_state['layers'], new_state['layers']):
+            me['weights'] = peer['weights']
+            me['weightsInc'] = peer['weightsInc']
+            me['bias'] = peer['bias']
+        
+        self.model.copyToGPU()
+                  
     def get_test_error(self):
         next_data = self.get_next_batch(train=False)
         test_outputs = []
@@ -242,10 +241,10 @@ class ConvNetRunner(object):
         if not os.path.exists(checkpoint_dir):
             os.makedirs(checkpoint_dir)
     
-        pickle(checkpoint_file_full_path, dic,compress=self.zip_save)
+        pickle(checkpoint_file_full_path, dic, compress=self.zip_save)
         
         for f in sorted(os.listdir(checkpoint_dir), key=alphanum_key):
-            if sum(os.path.getsize(os.path.join(checkpoint_dir, f2)) for f2 in os.listdir(checkpoint_dir)) > self.max_filesize_mb*1024*1024 and f != checkpoint_file:
+            if sum(os.path.getsize(os.path.join(checkpoint_dir, f2)) for f2 in os.listdir(checkpoint_dir)) > self.max_filesize_mb * 1024 * 1024 and f != checkpoint_file:
                 os.remove(os.path.join(checkpoint_dir, f))
             else:
                 break
@@ -268,7 +267,7 @@ class ConvNetRunner(object):
             load_dic = None
             options = op.parse()
             if options["load_file"].value_given:
-                load_dic = IGPUModel.load_checkpoint(options["load_file"].value)
+                load_dic = ConvNetRunner.load_checkpoint(options["load_file"].value)
                 old_op = load_dic["op"]
                 old_op.merge_from(op)
                 op = old_op
@@ -285,7 +284,7 @@ class ConvNetRunner(object):
         sys.exit(1)
 
     def init_model_lib(self):
-        num_peers = MPI.COMM_WORLD.Get_size()
+        num_peers = WORLD.Get_size()
         
         # Adjust our learning rate based on the number of other workers - more workers -> larger
         # batch size -> higher learning rate.
@@ -360,12 +359,12 @@ class ConvNetRunner(object):
         return batch_data
 
     def get_gpus(self):
-        rank = int(MPI.COMM_WORLD.Get_rank())
+        rank = int(WORLD.Get_rank())
         gpus = self.op.get_value('gpu')
         self.device_ids = [gpus[rank % gpu_count()]]
         if self.device_ids[0] == -1:
           self.device_ids[0] = rank % gpu_count()
-        print >>sys.stderr, 'MPI RANK: %d, device %s' % (rank, self.device_ids)
+        print >> sys.stderr, 'MPI RANK: %d, device %s' % (rank, self.device_ids)
 
     def start_batch(self, batch_data, train=True):
         data = batch_data[2]
@@ -397,7 +396,7 @@ class ConvNetRunner(object):
     def print_costs(self, cost_outputs):
         costs, num_cases = cost_outputs[0], cost_outputs[1]
         for errname in costs.keys():
-            costs[errname] = [(v/num_cases) for v in costs[errname]]
+            costs[errname] = [(v / num_cases) for v in costs[errname]]
             print "%s: " % errname,
             print ", ".join("%6f" % v for v in costs[errname]),
             if sum(m.isnan(v) for v in costs[errname]) > 0 or sum(m.isinf(v) for v in costs[errname]):
@@ -420,14 +419,14 @@ class ConvNetRunner(object):
         self.print_weight_summary()
 
     def print_weight_summary(self):
-        print "-------------------------------------------------------", 
-        for i,l in enumerate(self.layers): # This is kind of hacky but will do for now.
+        print "-------------------------------------------------------",
+        for i, l in enumerate(self.layers): # This is kind of hacky but will do for now.
             if 'weights' in l:
                 if type(l['weights']) == n.ndarray:
                     print "%sLayer '%s' weights: %e [%e]" % (NL, l['name'], n.mean(n.abs(l['weights'])), n.mean(n.abs(l['weightsInc']))),
                 elif type(l['weights']) == list:
                     print ""
-                    print NL.join("Layer '%s' weights[%d]: %e [%e]" % (l['name'], i, n.mean(n.abs(w)), n.mean(n.abs(wi))) for i,(w,wi) in enumerate(zip(l['weights'],l['weightsInc']))),
+                    print NL.join("Layer '%s' weights[%d]: %e [%e]" % (l['name'], i, n.mean(n.abs(w)), n.mean(n.abs(wi))) for i, (w, wi) in enumerate(zip(l['weights'], l['weightsInc']))),
                 print "%sLayer '%s' biases: %e [%e]" % (NL, l['name'], n.mean(n.abs(l['biases'])), n.mean(n.abs(l['biasesInc']))),
         print ""
 
@@ -440,8 +439,8 @@ class ConvNetRunner(object):
         
     def aggregate_test_outputs(self, test_outputs):
         num_cases = sum(t[1] for t in test_outputs)
-        for i in xrange(1 ,len(test_outputs)):
-            for k,v in test_outputs[i][0].items():
+        for i in xrange(1 , len(test_outputs)):
+            for k, v in test_outputs[i][0].items():
                 for j in xrange(len(v)):
                     test_outputs[0][0][k][j] += test_outputs[i][0][k][j]
         return (test_outputs[0][0], num_cases)
@@ -467,7 +466,7 @@ class ConvNetRunner(object):
         op.add_option("mini", "minibatch_size", IntegerOptionParser, "Minibatch size", default=128)
         op.add_option("layer-def", "layer_def", StringOptionParser, "Layer definition file", set_once=True)
         op.add_option("layer-params", "layer_params", StringOptionParser, "Layer parameter file")
-        op.add_option("check-grads", "check_grads", BooleanOptionParser, "Check gradients and quit?", default=0, excuses=['data_path','save_path','train_batch_range','test_batch_range'])
+        op.add_option("check-grads", "check_grads", BooleanOptionParser, "Check gradients and quit?", default=0, excuses=['data_path', 'save_path', 'train_batch_range', 'test_batch_range'])
         op.add_option("multiview-test", "multiview_test", BooleanOptionParser, "Cropped DP: test on multiple patches?", default=0, requires=['logreg_name'])
         op.add_option("crop-border", "crop_border", IntegerOptionParser, "Cropped DP: crop border size", default=4, set_once=True)
         op.add_option("logreg-name", "logreg_name", StringOptionParser, "Cropped DP: logreg layer name (for --multiview-test)", default="")
@@ -489,7 +488,6 @@ class ConvNetRunner(object):
         return op
     
 if __name__ == "__main__":
-    #nr.seed(5)
     op = ConvNetRunner.get_options_parser()
 
     op, load_dic = ConvNetRunner.parse_options(op)

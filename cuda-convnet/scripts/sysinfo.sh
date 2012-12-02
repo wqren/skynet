@@ -15,7 +15,7 @@ if [[ ! -f /tmp/convnet-config ]]; then
 
   echo export MPI_INCLUDE="'$mpicomp'" >> /tmp/convnet-config
   echo export MPI_LINK="'$mpilink'" >> /tmp/convnet-config
-  python ./sysinfo.py | egrep "LIB|INCLUDE" >> /tmp/convnet-config
+  python $(dirname $0)/sysinfo.py | egrep "LIB|INCLUDE" >> /tmp/convnet-config
   test_result
   sed -i -e 's/-pthread//' /tmp/convnet-config
 fi

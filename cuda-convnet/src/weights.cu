@@ -123,12 +123,15 @@ Weights::~Weights() {
 
 void Weights::copyToGPU() {
     if (_srcWeights == NULL) {
-        _weights = new NVMatrix();
-        _weightsInc = new NVMatrix();
-        _weightsGrad = new NVMatrix();
+        if (_weights == NULL) {
+            _weights = new NVMatrix();
+            _weightsInc = new NVMatrix();
+            _weightsGrad = new NVMatrix();
+        }
+
         _weights->copyFromHost(*_hWeights, true);
         _weightsInc->copyFromHost(*_hWeightsInc, true);
-        _weightsGrad->copyFromHost(*_hWeightsInc, true);
+        _weightsGrad->zero();
     } else {
         _weights = _srcWeights->_weights;
         _weightsInc = _srcWeights->_weightsInc;
