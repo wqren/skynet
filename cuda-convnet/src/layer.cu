@@ -45,8 +45,8 @@ using namespace std;
  * =======================
  */
 
-Layer::Layer(ConvNet* convNet, PyObject* paramsDict, bool trans) : 
-             _convNet(convNet),  _trans(trans) {
+Layer::Layer(PyObject* paramsDict, bool trans) : 
+             _trans(trans) {
     _name = pyDictGetString(paramsDict, "name");
     _type = pyDictGetString(paramsDict, "type");
     
@@ -243,8 +243,8 @@ NVMatrix& Layer::getActsGrad() {
  * NeuronLayer
  * =======================
  */
-NeuronLayer::NeuronLayer(ConvNet* convNet, PyObject* paramsDict) 
-    : Layer(convNet, paramsDict, true) {
+NeuronLayer::NeuronLayer(PyObject* paramsDict) 
+    : Layer(paramsDict, true) {
     _neuron = &Neuron::makeNeuron(PyDict_GetItemString(paramsDict, "neuron"));
 }
 
@@ -261,8 +261,8 @@ void NeuronLayer::fpropActs(int inpIdx, float scaleTargets, PASS_TYPE passType) 
  * WeightLayer
  * =======================
  */
-WeightLayer::WeightLayer(ConvNet* convNet, PyObject* paramsDict, bool trans) :
-    Layer(convNet, paramsDict, trans) {
+WeightLayer::WeightLayer(PyObject* paramsDict, bool trans) :
+    Layer(paramsDict, trans) {
     
     MatrixV& hWeights = *pyDictGetMatrixV(paramsDict, "weights");
     MatrixV& hWeightsInc = *pyDictGetMatrixV(paramsDict, "weightsInc");
@@ -341,11 +341,11 @@ void WeightLayer::copyToGPU() {
     _biases->copyToGPU();
 }
 
-void WeightLayer::checkGradients() {
+void WeightLayer::checkGradients(ConvNet* convNet) {
     for (int i = 0; i < _weights.getSize(); i++) {
-        _convNet->checkGradient(_name + " weights[" + tostr(i) + "]", _wStep, _weights[i]);
+        convNet->checkGradient(_name + " weights[" + tostr(i) + "]", _wStep, _weights[i]);
     }
-    _convNet->checkGradient(_name + " biases", _bStep, *_biases);
+    convNet->checkGradient(_name + " biases", _bStep, *_biases);
 }
 
 Weights& WeightLayer::getWeights(int idx) {
@@ -357,7 +357,7 @@ Weights& WeightLayer::getWeights(int idx) {
  * FCLayer
  * =======================
  */
-FCLayer::FCLayer(ConvNet* convNet, PyObject* paramsDict) : WeightLayer(convNet, paramsDict, true) {
+FCLayer::FCLayer(PyObject* paramsDict) : WeightLayer(paramsDict, true) {
     _wStep = 0.1;
     _bStep = 0.01;
 }
@@ -390,8 +390,8 @@ void FCLayer::bpropWeights(NVMatrix& v, int inpIdx, PASS_TYPE passType) {
  * LocalLayer
  * =======================
  */
-LocalLayer::LocalLayer(ConvNet* convNet, PyObject* paramsDict)
-    : WeightLayer(convNet, paramsDict, false) {
+LocalLayer::LocalLayer(PyObject* paramsDict)
+    : WeightLayer(paramsDict, false) {
     _padding = pyDictGetIntV(paramsDict, "padding");
     _stride = pyDictGetIntV(paramsDict, "stride");
     _filterSize = pyDictGetIntV(paramsDict, "filterSize");
@@ -437,7 +437,7 @@ void LocalLayer::copyToGPU() {
  * ConvLayer
  * =======================
  */
-ConvLayer::ConvLayer(ConvNet* convNet, PyObject* paramsDict) : LocalLayer(convNet, paramsDict) {
+ConvLayer::ConvLayer(PyObject* paramsDict) : LocalLayer(paramsDict) {
     _partialSum = pyDictGetInt(paramsDict, "partialSum");
     _sharedBiases = pyDictGetInt(paramsDict, "sharedBiases");
 }
@@ -523,7 +523,7 @@ void ConvLayer::truncBwdActs() {
  * LocalUnsharedLayer
  * =======================
  */
-LocalUnsharedLayer::LocalUnsharedLayer(ConvNet* convNet, PyObject* paramsDict) : LocalLayer(convNet, paramsDict) {
+LocalUnsharedLayer::LocalUnsharedLayer(PyObject* paramsDict) : LocalLayer(paramsDict) {
 }
 
 void LocalUnsharedLayer::fpropActs(int inpIdx, float scaleTargets, PASS_TYPE passType) {
@@ -574,7 +574,7 @@ void LocalUnsharedLayer::bpropActs(NVMatrix& v, int inpIdx, float scaleTargets, 
  * SoftmaxLayer
  * =======================
  */
-SoftmaxLayer::SoftmaxLayer(ConvNet* convNet, PyObject* paramsDict) : Layer(convNet, paramsDict, true) {
+SoftmaxLayer::SoftmaxLayer(PyObject* paramsDict) : Layer(paramsDict, true) {
 }
 
 void SoftmaxLayer::fpropActs(int inpIdx, float scaleTargets, PASS_TYPE passType) {
@@ -606,7 +606,7 @@ void SoftmaxLayer::bpropActs(NVMatrix& v, int inpIdx, float scaleTargets, PASS_T
  * EltwiseSumLayer
  * =======================
  */
-EltwiseSumLayer::EltwiseSumLayer(ConvNet* convNet, PyObject* paramsDict) : Layer(convNet, paramsDict, false) {
+EltwiseSumLayer::EltwiseSumLayer(PyObject* paramsDict) : Layer(paramsDict, false) {
     _coeffs = pyDictGetFloatV(paramsDict, "coeffs");
 }
 
@@ -632,7 +632,7 @@ void EltwiseSumLayer::bpropActs(NVMatrix& v, int inpIdx, float scaleTargets, PAS
  * EltwiseMaxLayer
  * =======================
  */
-EltwiseMaxLayer::EltwiseMaxLayer(ConvNet* convNet, PyObject* paramsDict) : Layer(convNet, paramsDict, false) {
+EltwiseMaxLayer::EltwiseMaxLayer(PyObject* paramsDict) : Layer(paramsDict, false) {
 }
 
 void EltwiseMaxLayer::fpropActs(int inpIdx, float scaleTargets, PASS_TYPE passType) {
@@ -652,7 +652,7 @@ void EltwiseMaxLayer::bpropActs(NVMatrix& v, int inpIdx, float scaleTargets, PAS
  * DataLayer
  * =======================
  */
-DataLayer::DataLayer(ConvNet* convNet, PyObject* paramsDict) : Layer(convNet, paramsDict, false) {
+DataLayer::DataLayer(PyObject* paramsDict) : Layer(paramsDict, false) {
     _dataIdx = pyDictGetInt(paramsDict, "dataIdx");
 }
 
@@ -677,8 +677,8 @@ bool DataLayer::isGradProducer() {
  * PoolLayer
  * =====================
  */
-PoolLayer::PoolLayer(ConvNet* convNet, PyObject* paramsDict, bool trans) 
-    : Layer(convNet, paramsDict, trans) {
+PoolLayer::PoolLayer(PyObject* paramsDict, bool trans) 
+    : Layer(paramsDict, trans) {
     _channels = pyDictGetInt(paramsDict, "channels");
     _sizeX = pyDictGetInt(paramsDict, "sizeX");
     _start = pyDictGetInt(paramsDict, "start");
@@ -688,12 +688,12 @@ PoolLayer::PoolLayer(ConvNet* convNet, PyObject* paramsDict, bool trans)
     _pool = pyDictGetString(paramsDict, "pool");
 }
 
-PoolLayer& PoolLayer::makePoolLayer(ConvNet* convNet, PyObject* paramsDict) {
+PoolLayer& PoolLayer::makePoolLayer(PyObject* paramsDict) {
     string _pool = pyDictGetString(paramsDict, "pool");
     if (_pool == "max") {
-        return *new MaxPoolLayer(convNet, paramsDict);
+        return *new MaxPoolLayer(paramsDict);
     } else if(_pool == "avg") {
-        return *new AvgPoolLayer(convNet, paramsDict);
+        return *new AvgPoolLayer(paramsDict);
     }
     throw string("Unknown pooling layer type ") + _pool;
 }
@@ -703,7 +703,7 @@ PoolLayer& PoolLayer::makePoolLayer(ConvNet* convNet, PyObject* paramsDict) {
  * AvgPoolLayer
  * =====================
  */
-AvgPoolLayer::AvgPoolLayer(ConvNet* convNet, PyObject* paramsDict) : PoolLayer(convNet, paramsDict, false) {
+AvgPoolLayer::AvgPoolLayer(PyObject* paramsDict) : PoolLayer(paramsDict, false) {
 }
 
 void AvgPoolLayer::fpropActs(int inpIdx, float scaleTargets, PASS_TYPE passType) {
@@ -719,7 +719,7 @@ void AvgPoolLayer::bpropActs(NVMatrix& v, int inpIdx, float scaleTargets, PASS_T
  * MaxPoolLayer
  * =====================
  */
-MaxPoolLayer::MaxPoolLayer(ConvNet* convNet, PyObject* paramsDict) : PoolLayer(convNet, paramsDict, false) {
+MaxPoolLayer::MaxPoolLayer(PyObject* paramsDict) : PoolLayer(paramsDict, false) {
 }
 
 void MaxPoolLayer::fpropActs(int inpIdx, float scaleTargets, PASS_TYPE passType) {
@@ -735,7 +735,7 @@ void MaxPoolLayer::bpropActs(NVMatrix& v, int inpIdx, float scaleTargets, PASS_T
  * NailbedLayer
  * =====================
  */
-NailbedLayer::NailbedLayer(ConvNet* convNet, PyObject* paramsDict) : Layer(convNet, paramsDict, false) {
+NailbedLayer::NailbedLayer(PyObject* paramsDict) : Layer(paramsDict, false) {
     _channels = pyDictGetInt(paramsDict, "channels");
     _start = pyDictGetInt(paramsDict, "start");
     _stride = pyDictGetInt(paramsDict, "stride");
@@ -756,7 +756,7 @@ void NailbedLayer::bpropActs(NVMatrix& v, int inpIdx, float scaleTargets, PASS_T
  * GaussianBlurLayer
  * =====================
  */
-GaussianBlurLayer::GaussianBlurLayer(ConvNet* convNet, PyObject* paramsDict) : Layer(convNet, paramsDict, false) {
+GaussianBlurLayer::GaussianBlurLayer(PyObject* paramsDict) : Layer(paramsDict, false) {
     _channels = pyDictGetInt(paramsDict, "channels");
     _hFilter = pyDictGetMatrix(paramsDict, "filter");
 }
@@ -783,7 +783,7 @@ void GaussianBlurLayer::copyToGPU() {
  * ResizeLayer
  * =====================
  */
-ResizeLayer::ResizeLayer(ConvNet* convNet, PyObject* paramsDict) : Layer(convNet, paramsDict, false) {
+ResizeLayer::ResizeLayer(PyObject* paramsDict) : Layer(paramsDict, false) {
     _channels = pyDictGetInt(paramsDict, "channels");
     _imgSize = pyDictGetInt(paramsDict, "imgSize");
     _tgtSize = pyDictGetInt(paramsDict, "tgtSize");
@@ -804,7 +804,7 @@ void ResizeLayer::bpropActs(NVMatrix& v, int inpIdx, float scaleTargets, PASS_TY
  * RGBToYUVLayer
  * =====================
  */
-RGBToYUVLayer::RGBToYUVLayer(ConvNet* convNet, PyObject* paramsDict) : Layer(convNet, paramsDict, false) {
+RGBToYUVLayer::RGBToYUVLayer(PyObject* paramsDict) : Layer(paramsDict, false) {
 }
 
 void RGBToYUVLayer::fpropActs(int inpIdx, float scaleTargets, PASS_TYPE passType) {
@@ -821,7 +821,7 @@ void RGBToYUVLayer::bpropActs(NVMatrix& v, int inpIdx, float scaleTargets, PASS_
  * RGBToLABLayer
  * =====================
  */
-RGBToLABLayer::RGBToLABLayer(ConvNet* convNet, PyObject* paramsDict) : Layer(convNet, paramsDict, false) {
+RGBToLABLayer::RGBToLABLayer(PyObject* paramsDict) : Layer(paramsDict, false) {
     _center = pyDictGetInt(paramsDict, "center");
 }
 
@@ -839,7 +839,7 @@ void RGBToLABLayer::bpropActs(NVMatrix& v, int inpIdx, float scaleTargets, PASS_
  * ResponseNormLayer
  * =====================
  */
-ResponseNormLayer::ResponseNormLayer(ConvNet* convNet, PyObject* paramsDict) : Layer(convNet, paramsDict, false) {
+ResponseNormLayer::ResponseNormLayer(PyObject* paramsDict) : Layer(paramsDict, false) {
     _channels = pyDictGetInt(paramsDict, "channels");
     _size = pyDictGetInt(paramsDict, "size");
 
@@ -867,7 +867,7 @@ void ResponseNormLayer::truncBwdActs() {
  * CrossMapResponseNormLayer
  * =====================
  */
-CrossMapResponseNormLayer::CrossMapResponseNormLayer(ConvNet* convNet, PyObject* paramsDict) : ResponseNormLayer(convNet, paramsDict) {
+CrossMapResponseNormLayer::CrossMapResponseNormLayer(PyObject* paramsDict) : ResponseNormLayer(paramsDict) {
     _blocked = pyDictGetInt(paramsDict, "blocked");
 }
 
@@ -885,7 +885,7 @@ void CrossMapResponseNormLayer::bpropActs(NVMatrix& v, int inpIdx, float scaleTa
  * ContrastNormLayer
  * =====================
  */
-ContrastNormLayer::ContrastNormLayer(ConvNet* convNet, PyObject* paramsDict) : ResponseNormLayer(convNet, paramsDict) {
+ContrastNormLayer::ContrastNormLayer(PyObject* paramsDict) : ResponseNormLayer(paramsDict) {
     _imgSize = pyDictGetInt(paramsDict, "imgSize");
 }
 
@@ -912,8 +912,8 @@ void ContrastNormLayer::truncBwdActs() {
  * CostLayer
  * =====================
  */
-CostLayer::CostLayer(ConvNet* convNet, PyObject* paramsDict, bool trans) 
-    : Layer(convNet, paramsDict, trans) {
+CostLayer::CostLayer(PyObject* paramsDict, bool trans) 
+    : Layer(paramsDict, trans) {
     _coeff = pyDictGetFloat(paramsDict, "coeff");
 }
 
@@ -937,11 +937,11 @@ doublev& CostLayer::getCost() {
     return v;
 }
 
-CostLayer& CostLayer::makeCostLayer(ConvNet* convNet, string& type, PyObject* paramsDict) {
+CostLayer& CostLayer::makeCostLayer(string& type, PyObject* paramsDict) {
     if (type == "cost.logreg") {
-        return *new LogregCostLayer(convNet, paramsDict);
+        return *new LogregCostLayer(paramsDict);
     } else if (type == "cost.sum2") {
-        return *new SumOfSquaresCostLayer(convNet, paramsDict);
+        return *new SumOfSquaresCostLayer(paramsDict);
     }
     throw string("Unknown cost layer type ") + type;
 }
@@ -951,7 +951,7 @@ CostLayer& CostLayer::makeCostLayer(ConvNet* convNet, string& type, PyObject* pa
  * LogregCostLayer
  * =====================
  */
-LogregCostLayer::LogregCostLayer(ConvNet* convNet, PyObject* paramsDict) : CostLayer(convNet, paramsDict, false) {
+LogregCostLayer::LogregCostLayer(PyObject* paramsDict) : CostLayer(paramsDict, false) {
 }
 
 void LogregCostLayer::fpropActs(int inpIdx, float scaleTargets, PASS_TYPE passType) {
@@ -986,7 +986,7 @@ void LogregCostLayer::bpropActs(NVMatrix& v, int inpIdx, float scaleTargets, PAS
  * SumOfSquaresCostLayer
  * =====================
  */
-SumOfSquaresCostLayer::SumOfSquaresCostLayer(ConvNet* convNet, PyObject* paramsDict) : CostLayer(convNet, paramsDict, false) {
+SumOfSquaresCostLayer::SumOfSquaresCostLayer(PyObject* paramsDict) : CostLayer(paramsDict, false) {
 }
 
 void SumOfSquaresCostLayer::fpropActs(int inpIdx, float scaleTargets, PASS_TYPE passType) {
