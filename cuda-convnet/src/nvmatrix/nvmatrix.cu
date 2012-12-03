@@ -249,7 +249,7 @@ void NVMatrix::addProduct(const NVMatrix& a, const NVMatrix &b) {
 }
 
 void NVMatrix::zero() {
-    apply(NVMatrixOps::Zero(), *this);
+    apply(NVMatrixOps::Zero());
 }
 
 template <class Randomizer>

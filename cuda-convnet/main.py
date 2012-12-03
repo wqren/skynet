@@ -40,6 +40,9 @@ PALLIB = ctypes.CDLL('libopen-pal.so', ctypes.RTLD_GLOBAL)
 from mpi4py import MPI
 WORLD = MPI.COMM_WORLD
 
+class ModelStateException(Exception):
+    pass
+
 class ConvNetRunner(object):
     def __init__(self, op, load_dic, dp_params={}):
         filename_options = []
@@ -72,7 +75,7 @@ class ConvNetRunner(object):
         else:
             self.model_state = {}
             if filename_options is not None:
-                self.save_file = 'ConvNet' + "_" + '_'.join(['%s_%s' % (char, self.options[opt].get_str_value()) for opt, char in filename_options]) + '_' + strftime('%Y-%m-%d_%H.%M.%S')
+                self.save_file = 'ConvNet' + "_" + '_'.join(['%s_%s' % (char, self.options[opt].get_str_value()) for opt, char in filename_options]) + '_' + strftime('%Y-%m-%d_%H.%M.%S') + '.%d' % WORLD.Get_rank()
             self.model_state["train_outputs"] = []
             self.model_state["test_outputs"] = []
             self.model_state["epoch"] = 1
@@ -138,7 +141,6 @@ class ConvNetRunner(object):
             next_data = self.get_next_batch()
             
             costmap, num_cases = self.finish_batch()
-            self.exchange_weights(costmap['logprob'][1])
             self.train_outputs += [(costmap, num_cases)]
             self.print_train_results()
 
@@ -150,6 +152,8 @@ class ConvNetRunner(object):
                 self.conditional_save()
             
             self.print_train_time(time() - compute_time_py)
+            self.exchange_weights(costmap['logprob'][1])
+
         self.cleanup()
     
     def print_model_state(self):
@@ -183,20 +187,20 @@ class ConvNetRunner(object):
         return cost.getCostMap(), cost.getNumCases()
       
     def exchange_weights(self, mycost):
-        # Wait for all of our peers to catch up
-        WORLD.Barrier()
-        peer_costs = WORLD.alltoall(mycost)
-        print >>sys.stderr, 'Peer costs:', peer_costs
-        best_peer, best_cost = sorted(enumerate(peer_costs), key=lambda t: t[1])[1]
+        peer_costs = WORLD.allgather(mycost)
+        best_peer, best_cost = sorted(enumerate(peer_costs), key=lambda t: t[1])[0]
+        print 'Peers: ', peer_costs
         
         # if i'm the best peer, share my weights with everyone else
-        new_state = WORLD.bcast(self.model_state['layers'], rank=best_peer)
-        for me, peer in zip(self.model_state['layers'], new_state['layers']):
-            me['weights'] = peer['weights']
-            me['weightsInc'] = peer['weightsInc']
-            me['bias'] = peer['bias']
-        
-        self.model.copyToGPU()
+        new_layers = WORLD.bcast(self.model_state['layers'], root=best_peer)
+        if best_peer != WORLD.Get_rank():
+            print 'Fetching weights from ', (best_peer, best_cost), 'me = ', (WORLD.Get_rank(), mycost)
+            for me, peer in zip(self.model_state['layers'], new_layers):
+                if 'weights' in me: 
+                  for idx in range(len(me['weights'])): me['weights'][idx][:] = peer['weights'][idx]
+                  for idx in range(len(me['weightsInc'])): me['weightsInc'][idx][:] = peer['weightsInc'][idx]
+                  me['biases'][:] = peer['biases']
+                  me['biasesInc'][:] = peer['biasesInc']
                   
     def get_test_error(self):
         next_data = self.get_next_batch(train=False)
@@ -361,6 +365,9 @@ class ConvNetRunner(object):
     def get_gpus(self):
         rank = int(WORLD.Get_rank())
         gpus = self.op.get_value('gpu')
+        if gpus == [-1]:
+          gpus = range(10)
+
         self.device_ids = [gpus[rank % gpu_count()]]
         if self.device_ids[0] == -1:
           self.device_ids[0] = rank % gpu_count()
@@ -494,7 +501,4 @@ if __name__ == "__main__":
     model = ConvNetRunner(op, load_dic)
     model.start()
 
-
-class ModelStateException(Exception):
-    pass
 

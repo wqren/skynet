@@ -5,7 +5,7 @@ VALGRIND="valgrind"
 NUMPROCS=$1
 
 if [[ -z $MINIBATCH ]]; then
-  MINIBATCH=512
+  MINIBATCH=32
 fi
 
 echo "minibatch: $MINIBATCH"
@@ -19,20 +19,19 @@ mkdir -p output-$NUMPROCS
 
 set -x
 
-#mpirun\
-# -n "$NUMPROCS" \
-# -output-filename "$PWD/output-$NUMPROCS/mpi" \
-# -hostfile ./hostfile \
-
-python convnet.py \
+ #--gpu=0 \
+mpirun\
+ -n "$NUMPROCS" \
+ -output-filename "$PWD/output-$NUMPROCS/mpi" \
+ -hostfile ./hostfile \
+  python main.py \
  --data-path=/home/power/datasets/cifar-10-py-colmajor \
  --save-path=/scratch/tmp \
  --test-range=5 \
  --train-range=1-4 \
- --layer-def=./cifar.cfg \
- --layer-params=./cifar-params.cfg \
+ --layer-def=./example-layers/cifar.cfg \
+ --layer-params=./example-layers/cifar-params.cfg \
  --data-provider=cifar \
  --test-freq=2 \
  --epochs=20 \
- --gpu=0 \
  --mini=$MINIBATCH

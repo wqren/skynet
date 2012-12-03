@@ -131,6 +131,7 @@ void Weights::copyToGPU() {
 
         _weights->copyFromHost(*_hWeights, true);
         _weightsInc->copyFromHost(*_hWeightsInc, true);
+        _weightsGrad->resize(_hWeights->getNumRows(), _hWeights->getNumCols());
         _weightsGrad->zero();
     } else {
         _weights = _srcWeights->_weights;

@@ -88,6 +88,7 @@ TrainingWorker::TrainingWorker(ConvNet& convNet, CPUData& data, bool test)
 // Need to setData here (as opposed to the constructor) because the constructor executes in
 // the original CPU thread, which is not the one with GPU access.
 void TrainingWorker::run() {
+    _convNet->copyToGPU();
     _dp->setData(*_data);
     Cost& batchCost = *new Cost(0);
     for (int i = 0; i < _dp->getNumMinibatches(); i++) {
