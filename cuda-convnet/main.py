@@ -130,12 +130,12 @@ class ConvNetRunner(object):
         next_data = self.get_next_batch()
         while self.epoch <= self.num_epochs:
             data = next_data
-            self.epoch, self.batchnum = data[0], data[1]
+            self.epoch, self.batchnum, batch_data = data
             self.print_iteration()
             sys.stdout.flush()
             
             compute_time_py = time()
-            self.start_batch(data)
+            self.start_batch(batch_data)
             
             # load the next batch while the current one is computing
             next_data = self.get_next_batch()
@@ -150,9 +150,9 @@ class ConvNetRunner(object):
                 self.print_test_results()
                 self.print_test_status()
                 self.conditional_save()
+                self.exchange_weights(costmap['logprob'][1])
             
             self.print_train_time(time() - compute_time_py)
-            self.exchange_weights(costmap['logprob'][1])
 
         self.cleanup()
     
@@ -163,12 +163,7 @@ class ConvNetRunner(object):
         sys.exit(0)
     
     def sync_with_host(self):
-        worker = convnet.SyncWorker(self.model)
-        worker.thisown = 0
-        self.model.getWorkerQueue().enqueue(worker)
-        res = self.model.getResultQueue().dequeue()
-        assert res.getResultType() == convnet.WorkResult.SYNC_DONE
-
+        assert self.run_worker(convnet.SyncWorker) == convnet.WorkResult.SYNC_DONE
             
     def get_num_batches_done(self):
         return len(self.train_batch_range) * (self.epoch - 1) + self.batchnum - self.train_batch_range[0] + 1
@@ -186,28 +181,57 @@ class ConvNetRunner(object):
         cost = result.getResults()
         return cost.getCostMap(), cost.getNumCases()
       
-    def exchange_weights(self, mycost):
-        peer_costs = WORLD.allgather(mycost)
-        best_peer, best_cost = sorted(enumerate(peer_costs), key=lambda t: t[1])[0]
-        print 'Peers: ', peer_costs
+    def exchange_weights(self, my_cost):
+        start = time()
+        peer_costs = WORLD.allgather(my_cost)
+        sync_costs = time()
+
+        peer_costs = sorted(enumerate(peer_costs), key=lambda t: t[1])
+        best_peer, best_cost = peer_costs[0]
+        def copy_array_with_jitter(src, dst):
+            dst[:] = src
+            #total_weight = n.sum(n.abs(src))
+            #dst[:] = src + (n.random.random(dst.shape) * 1e-2 / total_weight)
         
         # if i'm the best peer, share my weights with everyone else
         new_layers = WORLD.bcast(self.model_state['layers'], root=best_peer)
-        if best_peer != WORLD.Get_rank():
-            print 'Fetching weights from ', (best_peer, best_cost), 'me = ', (WORLD.Get_rank(), mycost)
+        
+        print >>sys.stderr, 'Peers: ', peer_costs
+        print >>sys.stderr, 'Best: ', best_peer, best_cost, '; Local: ', WORLD.Get_rank(), my_cost
+
+        # if our peer isn't significantly better then us, keep going with our own weights
+        if my_cost / best_cost < 1.05:
+            print >>sys.stderr, 'Keeping local weights.'
+        else:
+            print >>sys.stderr, 'Fetching weights from ', best_peer
             for me, peer in zip(self.model_state['layers'], new_layers):
                 if 'weights' in me: 
-                  for idx in range(len(me['weights'])): me['weights'][idx][:] = peer['weights'][idx]
-                  for idx in range(len(me['weightsInc'])): me['weightsInc'][idx][:] = peer['weightsInc'][idx]
-                  me['biases'][:] = peer['biases']
-                  me['biasesInc'][:] = peer['biasesInc']
-                  
+                  for idx in range(len(me['weights'])): 
+                    copy_array_with_jitter(me['weights'][idx], peer['weights'][idx])
+                    copy_array_with_jitter(me['weightsInc'][idx], peer['weightsInc'][idx])
+                  copy_array_with_jitter(me['biases'], peer['biases'])
+                  copy_array_with_jitter(me['biasesInc'], peer['biasesInc'])
+        
+        WORLD.Barrier()
+        sync_weights = time()
+        assert self.run_worker(convnet.CopyToGPUWorker) == convnet.WorkResult.SYNC_DONE
+        sync_gpu = time()
+        print >>sys.stderr, 'Synced with peers: costs: %f weights: %f copy to gpu: %f' % (
+            sync_costs - start, sync_weights - sync_costs, sync_gpu - sync_weights)
+    
+    def run_worker(self, klass):
+        worker = klass(self.model)
+        worker.thisown = 0
+        self.model.getWorkerQueue().enqueue(worker)
+        res = self.model.getResultQueue().dequeue()
+        return res.getResultType()
+
     def get_test_error(self):
         next_data = self.get_next_batch(train=False)
         test_outputs = []
         while True:
             data = next_data
-            self.start_batch(data, train=False)
+            self.start_batch(data[2], train=False)
             load_next = not self.test_one and data[1] < self.test_batch_range[-1]
             if load_next: # load next batch
                 next_data = self.get_next_batch(train=False)
@@ -358,9 +382,20 @@ class ConvNetRunner(object):
             
     # Make sure the data provider returned data in proper format
     def parse_batch_data(self, batch_data, train=True):
+        epoch, batch_num, (data, labels) = batch_data
         if max(d.dtype != n.single for d in batch_data[2]):
             raise DataProviderException("All matrices returned by data provider must consist of single-precision floats.")
-        return batch_data
+
+        #print data.shape, labels.shape
+        # shuffle the instances to learn on 
+#        samples = data.shape[1]
+#        idx = range(samples)
+#        n.random.shuffle(idx)
+#
+#        data = data[:, idx]
+#        labels = labels[:, idx]
+#        print data.shape, labels.shape
+        return epoch, batch_num, [data, labels]
 
     def get_gpus(self):
         rank = int(WORLD.Get_rank())
@@ -374,8 +409,7 @@ class ConvNetRunner(object):
         print >> sys.stderr, 'MPI RANK: %d, device %s' % (rank, self.device_ids)
 
     def start_batch(self, batch_data, train=True):
-        data = batch_data[2]
-        cpudata = convnet.CPUData(data)
+        cpudata = convnet.CPUData(batch_data)
         cpudata.thisown = 0
 
         if self.check_grads:

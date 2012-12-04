@@ -79,6 +79,12 @@ public:
     void run();
 };
 
+class CopyToGPUWorker : public Worker {
+public:
+    CopyToGPUWorker(ConvNet& convNet);
+    void run();
+};
+
 class GradCheckWorker : public DataWorker {
 public:
     GradCheckWorker(ConvNet& convNet, CPUData& data);

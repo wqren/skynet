@@ -35,9 +35,12 @@ floatv* getFloatV(PyObject* pyList) {
     if (pyList == NULL) {
         return NULL;
     }
+    if (!PyList_Check(pyList)) {
+        throw "Not a sequence!";
+    }
     floatv* vec = new floatv();
-    for (int i = 0; i < PyList_GET_SIZE(pyList); i++) {
-        vec->push_back(PyFloat_AS_DOUBLE(PyList_GET_ITEM(pyList, i)));
+    for (int i = 0; i < PyList_Size(pyList); i++) {
+        vec->push_back(PyFloat_AS_DOUBLE(PyList_GetItem(pyList, i)));
     }
     return vec;
 }
@@ -46,9 +49,12 @@ intv* getIntV(PyObject* pyList) {
     if (pyList == NULL) {
         return NULL;
     }
+    if (!PyList_Check(pyList)) {
+        throw "Not a sequence!";
+    }
     intv* vec = new intv();
-    for (int i = 0; i < PyList_GET_SIZE(pyList); i++) {
-        vec->push_back(PyInt_AS_LONG(PyList_GET_ITEM(pyList, i)));
+    for (int i = 0; i < PyList_Size(pyList); i++) {
+        vec->push_back(PyInt_AS_LONG(PyList_GetItem(pyList, i)));
     }
     return vec;
 }
@@ -57,9 +63,12 @@ int* getIntA(PyObject* pyList) {
     if (pyList == NULL) {
         return NULL;
     }
-    int* arr = new int[PyList_GET_SIZE(pyList)];
-    for (int i = 0; i < PyList_GET_SIZE(pyList); i++) {
-        arr[i] = PyInt_AS_LONG(PyList_GET_ITEM(pyList, i));
+    if (!PyList_Check(pyList)) {
+        throw "Not a sequence!";
+    }
+    int* arr = new int[PyList_Size(pyList)];
+    for (int i = 0; i < PyList_Size(pyList); i++) {
+        arr[i] = PyInt_AS_LONG(PyList_GetItem(pyList, i));
     }
     return arr;
 }
@@ -67,9 +76,14 @@ MatrixV* getMatrixV(PyObject* pyList) {
     if (pyList == NULL) {
         return NULL;
     }
+
+    if (!PyList_Check(pyList)) {
+        throw "Not a sequence!";
+    }
+
     MatrixV* vec = new MatrixV();
-    for (int i = 0; i < PyList_GET_SIZE(pyList); i++) {
-        vec->push_back(new Matrix((PyArrayObject*) PyList_GET_ITEM(pyList, i)));
+    for (int i = 0; i < PyList_Size(pyList); i++) {
+        vec->push_back(new Matrix((PyArrayObject*) PyList_GetItem(pyList, i)));
     }
     return vec;
 }

@@ -21,6 +21,7 @@ set -x
 
  #--gpu=0 \
 mpirun\
+ --mca btl_tcp_if_exclude virbr0,eth1 \
  -n "$NUMPROCS" \
  -output-filename "$PWD/output-$NUMPROCS/mpi" \
  -hostfile ./hostfile \
