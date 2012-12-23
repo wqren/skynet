@@ -23,7 +23,6 @@
 # EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 from convdata import *
-from gpumodel import * 
 from options import *
 from os import linesep as NL
 from time import time, asctime, strftime, localtime

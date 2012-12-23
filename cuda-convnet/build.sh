@@ -26,7 +26,7 @@ echo Found MPI_LINK: ${MPI_LINK}
 #export MPI_LINK=...
 
 # CUDA toolkit installation directory.
-export CUDA_INSTALL_PATH=/home/power/pkg/cuda-4.2
+export CUDA_INSTALL_PATH=/home/power/pkg/cuda-5.0
 
 # CUDA SDK installation directory.
 export CUDA_SDK_PATH=/home/power/pkg/gpusdk
