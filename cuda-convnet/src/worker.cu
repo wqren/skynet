@@ -88,8 +88,8 @@ TrainingWorker::TrainingWorker(ConvNet& convNet, CPUData& data, bool test)
 // Need to setData here (as opposed to the constructor) because the constructor executes in
 // the original CPU thread, which is not the one with GPU access.
 void TrainingWorker::run() {
-    _convNet->copyToGPU();
     _dp->setData(*_data);
+
     Cost& batchCost = *new Cost(0);
     for (int i = 0; i < _dp->getNumMinibatches(); i++) {
         double fPropStart = Now();
@@ -128,6 +128,14 @@ void SyncWorker::run() {
     _convNet->copyToCPU();
     _convNet->getResultQueue().enqueue(new WorkResult(WorkResult::SYNC_DONE));
 }
+
+CopyToGPUWorker::CopyToGPUWorker(ConvNet& convNet) : Worker(convNet) {}
+
+void CopyToGPUWorker::run() {
+    _convNet->copyToGPU();
+    _convNet->getResultQueue().enqueue(new WorkResult(WorkResult::SYNC_DONE));
+}
+
 
 /* 
  * ====================
@@ -227,3 +235,4 @@ void FeatureWorker::run() {
     cudaThreadSynchronize();
     _convNet->getResultQueue().enqueue(new WorkResult(WorkResult::BATCH_DONE, batchCost));
 }
+

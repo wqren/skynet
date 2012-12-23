@@ -64,7 +64,7 @@ void WeightCombiner::newGradient(NVMatrix& gradient, NVMatrix& accumulator) {
     ++numGradients;
 }
 
-void WeightCombiner::apply(NVMatrix& weights, NVMatrix& previous, NVMatrix& grads, int numCases) {
+void WeightCombiner::apply(NVMatrix& incTmp, NVMatrix& weights, NVMatrix& previous, NVMatrix& grads, int numCases) {
     incTmp.resize(weights);
     grads.scale(learningRate / numCases, incTmp);
 
@@ -79,8 +79,10 @@ void WeightCombiner::apply(NVMatrix& weights, NVMatrix& previous, NVMatrix& grad
     }
    
     // Log_Info("%f %f %f %f %f %f", learningRate, numCases, momentum, decay, previous.norm2(), grads.norm2());
+    bool trans = previous.isTrans();
     weights.add(incTmp);
     incTmp.copy(previous);
+    previous.transpose(trans);
 
     // assert(!isnan(incTmp.norm2()));
     // assert(!isnan(weights.norm2()));
@@ -140,7 +142,7 @@ void Weights::copyToGPU() {
     }
     _onGPU = true;
 
-    Log_Debug("%f %f", _weights->norm2(), _weightsInc->norm2());
+    // Log_Info("%f %f", _weights->norm2(), _weightsInc->norm2());
 }
 
 void Weights::update(int numCases) {
@@ -394,13 +396,13 @@ void NetworkManager::sendAndRecv(int64_t id, NVMatrix& gradient, NVMatrix& incre
         _gpuTmp.resize(w->inc);
         _gpuTmp.copyFromHost(w->inc);
         w->combiner->newGradient(gradient, _gpuTmp);
-        w->combiner->apply(weights, increment, _gpuTmp, numCases);
+        w->combiner->apply(_incTmp, weights, increment, _gpuTmp, numCases);
         w->inc.scale(0);
         w->incCount = 0;
     } else {
         _gpuTmp.resize(gradient);
         w->combiner->newGradient(gradient, _gpuTmp);
-        w->combiner->apply(weights, increment, _gpuTmp, numCases);
+        w->combiner->apply(_incTmp, weights, increment, _gpuTmp, numCases);
     }
 
     // PERIODIC(30, Log_Debug("MPI status: %.2fMB sent, %.2fMB received, %.2f seconds", _bytesSent / 1e6, _bytesRecv / 1e6, _timeWasted));

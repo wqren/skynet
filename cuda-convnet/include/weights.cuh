@@ -50,7 +50,6 @@ struct WeightCombiner {
     int numGradients;
 
     double magnitude;
-    NVMatrix incTmp;
 
     WeightCombiner(double momentum, double decay, double learningRate);
 
@@ -64,7 +63,7 @@ struct WeightCombiner {
     }
 
     // Merge an accumulated set of gradients into our weight vector.
-    virtual void apply(NVMatrix& weights, NVMatrix& previousIncrement, NVMatrix& grads, int numCases);
+    virtual void apply(NVMatrix& incTmp, NVMatrix& weights, NVMatrix& previousIncrement, NVMatrix& grads, int numCases);
 };
 
 // Information about incoming/outgoing weight changes for a single layer.
@@ -118,6 +117,7 @@ private:
     double _timeWasted;
 
     NVMatrix _gpuTmp;
+    NVMatrix _incTmp;
 public:
     // Send out a new set of gradients, and apply any gradients received from remote machines
     // (as well as those passed in) to the weight matrix.

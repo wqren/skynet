@@ -30,7 +30,7 @@
   } catch (std::string& s) {
 	PyErr_SetString(PyExc_Exception, s.c_str());
 	return NULL;
-  } catch (const char* s) {
+  } catch (char const*& s) {
 	PyErr_SetString(PyExc_Exception, s);
 	return NULL;
   }
