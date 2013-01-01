@@ -22,8 +22,7 @@
 # NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
 # EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-from imagenetdata import ImagenetDataProvider
-from convdata import *
+from data import *
 from options import *
 from os import linesep as NL
 from time import time, asctime, strftime, localtime
@@ -107,7 +106,7 @@ class ConvNetRunner(object):
                                                                      type=self.dp_type, dp_params=self.dp_params, test=False)
         except DataProviderException, e:
             print "Unable to create data provider: %s" % e
-            self.print_data_providers()
+            self._providers()
             sys.exit(1)
 
     def start(self):
@@ -288,12 +287,6 @@ class ConvNetRunner(object):
             return unpickle(os.path.join(load_dir, sorted(os.listdir(load_dir), key=alphanum_key)[-1]))
         return unpickle(load_dir)
 
-    @staticmethod
-    def print_data_providers():
-        print "Available data providers:"
-        for dp, desc in dp_types.iteritems():
-            print "    %s: %s" % (dp, desc)
-            
     @staticmethod
     def parse_options(op):
         try:
@@ -526,11 +519,6 @@ class ConvNetRunner(object):
         op.options["testing_freq"].default = 50
         op.options["num_epochs"].default = 50000
         op.options['dp_type'].default = None
-        
-        DataProvider.register_data_provider('imagenet', 'ImageNet', ImagenetDataProvider)
-        DataProvider.register_data_provider('cifar', 'CIFAR', CIFARDataProvider)
-        DataProvider.register_data_provider('dummy-cn-n', 'Dummy ConvNet', DummyConvNetDataProvider)
-        DataProvider.register_data_provider('cifar-cropped', 'Cropped CIFAR', CroppedCIFARDataProvider)
         
         return op
     
