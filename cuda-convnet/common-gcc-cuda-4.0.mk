@@ -55,7 +55,7 @@ COMMONDIR  := $(ROOTDIR)/C/common
 SHAREDDIR  := $(ROOTDIR)/shared/
 
 # Compilers
-NVCC       := $(CUDA_INSTALL_PATH)/bin/nvcc 
+NVCC       := $(CUDA_INSTALL_PATH)/bin/nvcc --compiler-bindir=$(NVCC_BINDIR)
 CXX        := g++ -fPIC
 CC         := gcc -fPIC
 LINK       := g++ -fPIC
