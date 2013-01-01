@@ -10,6 +10,7 @@ function fail() {
   exit 1
 }
 
+rm -f /tmp/convnet-config
 ./scripts/sysinfo.sh || fail
 source /tmp/convnet-config
 
