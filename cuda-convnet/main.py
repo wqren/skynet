@@ -22,6 +22,7 @@
 # NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
 # EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+from imagenetdata import ImagenetDataProvider
 from convdata import *
 from options import *
 from os import linesep as NL
@@ -62,7 +63,7 @@ class ConvNetRunner(object):
         
         for o in op.get_options_list():
             setattr(self, o.name, o.value)
-        
+       
         n.random.shuffle(self.train_batch_range)
 
         # these are things that the model must remember but they're not input parameters
@@ -127,6 +128,7 @@ class ConvNetRunner(object):
         print "Saving checkpoints to %s" % os.path.join(self.save_path, self.save_file)
         print "========================="
         next_data = self.get_next_batch()
+        print 'Got initial batch.'
         while self.epoch <= self.num_epochs:
             data = next_data
             self.epoch, self.batchnum, batch_data = data
@@ -149,9 +151,13 @@ class ConvNetRunner(object):
                 self.print_test_results()
                 self.print_test_status()
                 self.conditional_save()
-                self.exchange_weights(costmap['logprob'][1])
             
             self.print_train_time(time() - compute_time_py)
+            
+            if self.get_num_batches_done() % self.exchange_freq == 0:
+                running_avg = n.mean(
+                    [cm['logprob'][1] for (cm, num_cases) in self.train_outputs[-self.exchange_freq:]])
+                self.exchange_weights(running_avg)
 
         self.cleanup()
     
@@ -493,6 +499,7 @@ class ConvNetRunner(object):
         op.add_option("test-range", "test_batch_range", RangeOptionParser, "Data batch range: testing")
         op.add_option("data-provider", "dp_type", StringOptionParser, "Data provider", default="default")
         op.add_option("test-freq", "testing_freq", IntegerOptionParser, "Testing frequency", default=25)
+        op.add_option("exchange-freq", "exchange_freq", IntegerOptionParser, "Exchange frequency", default=10)
         op.add_option("epochs", "num_epochs", IntegerOptionParser, "Number of epochs", default=500)
         op.add_option("data-path", "data_path", StringOptionParser, "Data path")
         op.add_option("save-path", "save_path", StringOptionParser, "Save path")
@@ -520,7 +527,7 @@ class ConvNetRunner(object):
         op.options["num_epochs"].default = 50000
         op.options['dp_type'].default = None
         
-        DataProvider.register_data_provider('imagenet', 'ImageNet', ImageNetDataProvider)
+        DataProvider.register_data_provider('imagenet', 'ImageNet', ImagenetDataProvider)
         DataProvider.register_data_provider('cifar', 'CIFAR', CIFARDataProvider)
         DataProvider.register_data_provider('dummy-cn-n', 'Dummy ConvNet', DummyConvNetDataProvider)
         DataProvider.register_data_provider('cifar-cropped', 'Cropped CIFAR', CroppedCIFARDataProvider)

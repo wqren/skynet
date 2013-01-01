@@ -476,7 +476,7 @@ bool NVMatrix::resize(int numRows, int numCols) {
 
         if (_numElements != numRows * numCols) {
             if (_maxElements < numRows * numCols) {
-                // Log_Info("NVMatrix::resize %d", numRows * numCols);
+                Log_Info("NVMatrix::resize %d", numRows * numCols);
                 _maxElements = numRows * numCols;
                 if (_numElements > 0) { // free old memory
                     cublasStatus status = cublasFree(_devData);

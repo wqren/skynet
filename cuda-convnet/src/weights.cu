@@ -322,7 +322,7 @@ NetworkManager::NetworkManager() {
 void NetworkManager::initialize() {
     NetworkManager* w = NetworkManager::get();
     assert(cudaGetDevice(&w->_cudaDevice) == cudaSuccess);
-    w->_mpiThread = new FuncThread(boost::bind(&NetworkManager::_mpiThreadFn, w));
+    // w->_mpiThread = new FuncThread(boost::bind(&NetworkManager::_mpiThreadFn, w));
 }
 
 void NetworkManager::pauseMPI() {
