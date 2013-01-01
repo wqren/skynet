@@ -28,11 +28,11 @@ mpirun\
   python main.py \
  --data-path=/home/power/datasets/cifar-10-py-colmajor \
  --save-path=/scratch/tmp \
- --test-range=5 \
- --train-range=1-4 \
+ --test-range=6 \
+ --train-range=1-5 \
  --layer-def=./example-layers/cifar.cfg \
  --layer-params=./example-layers/cifar-params.cfg \
  --data-provider=cifar \
- --test-freq=2 \
- --epochs=20 \
+ --test-freq=6 \
+ --epochs=10 \
  --mini=$MINIBATCH

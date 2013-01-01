@@ -350,7 +350,6 @@ class LayerWithInputParser(LayerParser):
     
     def verify_img_size(self):
         dic = self.dic
-        print dic['numInputs'][0], dic['imgPixels'],  dic['imgSize']
         if dic['numInputs'][0] % dic['imgPixels'] != 0 or dic['imgSize'] * dic['imgSize'] != dic['imgPixels']:
             raise LayerParsingError("Layer '%s': has %-d dimensional input, not interpretable as %d-channel images" % (dic['name'], dic['numInputs'][0], dic['channels']))
     
